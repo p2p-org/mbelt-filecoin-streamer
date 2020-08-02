@@ -8,6 +8,7 @@ import (
 	"github.com/ipfs/go-cid"
 	"golang.org/x/net/websocket"
 	"log"
+	"strings"
 	"time"
 )
 
@@ -146,18 +147,22 @@ func (c *APIClient) GetBlock(cid cid.Cid) *types.BlockHeader {
 	return resp.Result
 }
 
-func (c *APIClient) GetByHeight(height abi.ChainEpoch) *types.TipSet {
+func (c *APIClient) GetByHeight(height abi.ChainEpoch) (*types.TipSet, bool) {
 	resp := &TipSet{}
 	err := c.do(ChainGetTipSetByHeight, []interface{}{height, types.EmptyTSK}, resp)
 	if err != nil {
-		return nil
+		return nil, true
 	}
 
 	if resp.Error != nil {
-		// log.Println("[API][Error][GetByHeight]", resp.Error.Message)
-		return nil
+		log.Println("[API][Error][GetByHeight]", resp.Error.Message)
+		// Height reaching check
+		if strings.Contains(resp.Error.Message, "looking for tipset with height greater than start") {
+			return nil, false
+		}
+		return nil, true
 	}
-	return resp.Result
+	return resp.Result, true
 }
 
 func (c *APIClient) GetBlockMessages(cid cid.Cid) *api.BlockMessages {

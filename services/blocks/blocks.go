@@ -1,0 +1,46 @@
+package blocks
+
+import (
+	"github.com/filecoin-project/lotus/chain/types"
+	"github.com/filecoin-project/specs-actors/actors/abi"
+	"github.com/p2p-org/mbelt-filecoin-streamer/client"
+	"github.com/p2p-org/mbelt-filecoin-streamer/config"
+	"github.com/p2p-org/mbelt-filecoin-streamer/datastore"
+)
+
+type BlocksService struct {
+	config *config.Config
+	ds     *datastore.Datastore
+	api    *client.APIClient
+}
+
+func Init(config *config.Config, ds *datastore.Datastore, apiClient *client.APIClient) (*BlocksService, error) {
+	err := ds.SetupProducer()
+	if err != nil {
+		return nil, err
+	}
+
+	return &BlocksService{
+		config: config,
+		ds:     ds,
+		api:    apiClient,
+	}, nil
+}
+
+func (s *BlocksService) GetHead() *types.TipSet {
+	return s.api.GetHead()
+}
+
+func (s *BlocksService) GetGenesis() *types.TipSet {
+	return s.api.GetGenesis()
+}
+
+func (s *BlocksService) GetByHeight(height abi.ChainEpoch) (*types.TipSet, bool) {
+	return s.api.GetByHeight(height)
+}
+
+func (s *BlocksService) Push(blocks []*types.BlockHeader) {
+	for _, block := range blocks {
+		s.ds.Push(*block)
+	}
+}
