@@ -1,13 +1,10 @@
 package processor
 
 import (
-	"encoding/json"
 	"github.com/filecoin-project/lotus/chain/types"
 	"github.com/p2p-org/mbelt-filecoin-streamer/client"
 	"github.com/p2p-org/mbelt-filecoin-streamer/config"
 	"github.com/p2p-org/mbelt-filecoin-streamer/datastore"
-	"log"
-	"time"
 )
 
 type ProcessorService struct {
@@ -31,7 +28,7 @@ func (s *ProcessorService) ProcessStreams() {
 }
 
 func (s *ProcessorService) processBlocks() error {
-	messagesTopic, err := s.ds.InitBlocksTopic()
+	/*messagesTopic, err := s.ds.InitBlocksTopic()
 	if err != nil {
 		return err
 	}
@@ -52,8 +49,8 @@ func (s *ProcessorService) processBlocks() error {
 			continue
 		}
 
-	}
-
+	}*/
+	return nil
 }
 
 func (s *ProcessorService) processBlock(block *types.BlockHeader) {

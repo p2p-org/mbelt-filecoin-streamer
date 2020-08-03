@@ -109,6 +109,7 @@ func (c *APIClient) GetGenesis() *types.TipSet {
 	resp := &TipSet{}
 	err := c.do(ChainGetGenesis, nil, resp)
 	if err != nil {
+		log.Println("[API][Error][GetGenesis]", err)
 		return nil
 	}
 
@@ -123,6 +124,7 @@ func (c *APIClient) GetHead() *types.TipSet {
 	resp := &TipSet{}
 	err := c.do(ChainHead, nil, resp)
 	if err != nil {
+		log.Println("[API][Error][GetHead]", err)
 		return nil
 	}
 
@@ -137,6 +139,7 @@ func (c *APIClient) GetBlock(cid cid.Cid) *types.BlockHeader {
 	resp := &Block{}
 	err := c.do(ChainGetBlock, []interface{}{cid}, resp)
 	if err != nil {
+		log.Println("[API][Error][GetBlock]", err)
 		return nil
 	}
 
@@ -151,6 +154,7 @@ func (c *APIClient) GetByHeight(height abi.ChainEpoch) (*types.TipSet, bool) {
 	resp := &TipSet{}
 	err := c.do(ChainGetTipSetByHeight, []interface{}{height, types.EmptyTSK}, resp)
 	if err != nil {
+		log.Println("[API][Error][GetByHeight]", err)
 		return nil, true
 	}
 

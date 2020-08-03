@@ -5,6 +5,8 @@ import (
 	"github.com/p2p-org/mbelt-filecoin-streamer/config"
 	"github.com/p2p-org/mbelt-filecoin-streamer/services"
 	"log"
+	"os"
+	"strconv"
 )
 
 const (
@@ -14,17 +16,18 @@ const (
 var conf *config.Config
 
 func init() {
-	/*
-		conf = &config.Config{
-			APIUrl:     "ws://116.203.240.62:1234/rpc/v0",
-			APIToken:   "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJBbGxvdyI6WyJyZWFkIiwid3JpdGUiLCJzaWduIiwiYWRtaW4iXX0.3b1-x0KwOB1-60NzHNGsMdMyzr6b0kokzh-Z4bc400Y",
-			KafkaHosts: "localhost:9092",
-		}*/
-
 	conf = &config.Config{
-		APIUrl:     "ws://127.0.0.1:1234/rpc/v0",
-		KafkaHosts: "localhost:9092",
+		APIUrl:     os.Getenv("MBELT_FILECOIN_STREAMER_API_URL"),
+		APIToken:   os.Getenv("MBELT_FILECOIN_STREAMER_API_TOKEN"),
+		KafkaHosts: os.Getenv("MBELT_FILECOIN_STREAMER_KAFKA"), // "localhost:9092",
 	}
+
+	banner := "\nMBELT_FILECOIN_STREAMER_API_URL = " + conf.APIUrl + "\n" +
+		"MBELT_FILECOIN_STREAMER_API_TOKEN = " + conf.APIToken + "\n" +
+		"MBELT_FILECOIN_STREAMER_KAFKA = " + conf.KafkaHosts + "\n" +
+		"MBELT_FILECOIN_STREAMER_MIN_HEIGHT = " + os.Getenv("MBELT_FILECOIN_STREAMER_MIN_HEIGHT") + "\n"
+
+	log.Println(banner)
 }
 
 func main() {
@@ -45,7 +48,16 @@ func main() {
 		syncHeight = defaultHeight
 	}
 
-	for height := abi.ChainEpoch(0); height < syncHeight; height++ {
+	startHeight := abi.ChainEpoch(0)
+
+	// Temp
+	strHeight := os.Getenv("MBELT_FILECOIN_STREAMER_MIN_HEIGHT")
+	if strHeight != "" {
+		strHeightVal, _ := strconv.ParseInt(strHeight, 10, 64)
+		startHeight = abi.ChainEpoch(strHeightVal)
+	}
+
+	for height := startHeight; height < syncHeight; height++ {
 		log.Println("[Datastore][Debug]", "Load height:", height)
 
 		tipSet, isCanContinue := services.App().BlocksService().GetByHeight(height)
@@ -83,7 +95,5 @@ func main() {
 				}
 			}
 		}
-
 	}
-
 }
