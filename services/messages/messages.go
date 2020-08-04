@@ -7,6 +7,7 @@ import (
 	"github.com/p2p-org/mbelt-filecoin-streamer/client"
 	"github.com/p2p-org/mbelt-filecoin-streamer/config"
 	"github.com/p2p-org/mbelt-filecoin-streamer/datastore"
+	log "log"
 )
 
 type MessagesService struct {
@@ -31,6 +32,23 @@ func (s *MessagesService) GetMessage(cid cid.Cid) *types.Message {
 	return s.api.GetMessage(cid)
 }
 
-func (s *MessagesService) Push(message *types.Message) {
-	s.ds.Push(*message)
+func (s *MessagesService) Push(messages []*types.Message) {
+	// Empty messages has panic
+	defer func() {
+		if r := recover(); r != nil {
+			log.Println("[MessagesService][Recover]", "Cid throw panic")
+		}
+	}()
+
+	if len(messages) == 0 {
+		return
+	}
+
+	m := map[string]interface{}{}
+
+	for _, message := range messages {
+		m[message.Cid().String()] = message
+	}
+
+	s.ds.Push(datastore.TopicMessages, m)
 }

@@ -6,6 +6,7 @@ import (
 	"github.com/p2p-org/mbelt-filecoin-streamer/client"
 	"github.com/p2p-org/mbelt-filecoin-streamer/config"
 	"github.com/p2p-org/mbelt-filecoin-streamer/datastore"
+	"log"
 )
 
 type BlocksService struct {
@@ -15,11 +16,6 @@ type BlocksService struct {
 }
 
 func Init(config *config.Config, ds *datastore.Datastore, apiClient *client.APIClient) (*BlocksService, error) {
-	err := ds.SetupProducer()
-	if err != nil {
-		return nil, err
-	}
-
 	return &BlocksService{
 		config: config,
 		ds:     ds,
@@ -40,7 +36,21 @@ func (s *BlocksService) GetByHeight(height abi.ChainEpoch) (*types.TipSet, bool)
 }
 
 func (s *BlocksService) Push(blocks []*types.BlockHeader) {
-	for _, block := range blocks {
-		s.ds.Push(*block)
+	defer func() {
+		if r := recover(); r != nil {
+			log.Println("[MessagesService][Recover]", "Cid throw panic")
+		}
+	}()
+
+	if len(blocks) == 0 {
+		return
 	}
+
+	m := map[string]interface{}{}
+
+	for _, block := range blocks {
+		m[block.Cid().String()] = block
+	}
+
+	s.ds.Push(datastore.TopicBlocks, m)
 }

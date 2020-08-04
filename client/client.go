@@ -1,20 +1,28 @@
 package client
 
 import (
+	"bytes"
+	"encoding/json"
 	"errors"
+	"fmt"
 	"github.com/filecoin-project/lotus/api"
 	"github.com/filecoin-project/lotus/chain/types"
 	"github.com/filecoin-project/specs-actors/actors/abi"
 	"github.com/ipfs/go-cid"
-	"golang.org/x/net/websocket"
+	"io/ioutil"
 	"log"
+	"net/http"
 	"strings"
 	"time"
 )
 
+const (
+	protocolVersion = "2.0"
+)
+
 type APIClient struct {
-	conf *websocket.Config
-	conn *websocket.Conn
+	url string
+	jwt string
 }
 
 type APIErr struct {
@@ -23,9 +31,10 @@ type APIErr struct {
 }
 
 type APIRequest struct {
-	Id     int           `json:"id"`
-	Method string        `json:"method"`
-	Params []interface{} `json:"params"`
+	Id      int           `json:"id"`
+	Version string        `json:"jsonrpc"`
+	Method  string        `json:"method"`
+	Params  []interface{} `json:"params"`
 }
 
 type APIResponse struct {
@@ -34,73 +43,65 @@ type APIResponse struct {
 	Error   *APIErr `json:"error"`
 }
 
-func Init(url, origin, jwt string) (*APIClient, error) {
-	var (
-		c   APIClient
-		err error
-	)
-
-	c.conf, err = websocket.NewConfig(url, origin)
-	if err != nil {
-		log.Println("[APIClient][Error][Init]", err)
-		return nil, errors.New("cannot init config")
+func Init(url, jwt string) (*APIClient, error) {
+	c := &APIClient{
+		url: url,
+		jwt: jwt,
 	}
 
-	if jwt != "" {
-		c.conf.Header.Add(`Authorization`, `Bearer `+jwt)
+	testGenesis := c.GetGenesis()
+
+	if testGenesis == nil {
+		log.Println("[APIClient][Error][Init] Cannot init api client")
+		return nil, errors.New("cannot get genesis")
 	}
 
-	c.conn, err = websocket.DialConfig(c.conf)
-
-	if err != nil {
-		log.Println("[APIClient][Error][Init]", err)
-		return nil, errors.New("cannot connect")
-	}
-
-	return &c, nil
+	return c, nil
 }
 
 func (c *APIClient) do(method string, params []interface{}, dst interface{}) error {
 	var err error
-	request := APIRequest{
-		Id:     1,
-		Method: method,
-		Params: params,
+	payload := APIRequest{
+		Id:      time.Now().Nanosecond(),
+		Version: protocolVersion,
+		Method:  method,
+		Params:  params,
 	}
-	for attempt := 3; attempt > 0; attempt-- {
-		if err = websocket.JSON.Send(c.conn, request); err != nil {
-			time.Sleep(time.Millisecond * 100)
-			continue
-		}
 
-		err = websocket.JSON.Receive(c.conn, dst)
-		if err != nil {
-			time.Sleep(time.Millisecond * 100)
-			continue
-		}
-
-		return nil
+	encodedMessage, err := json.Marshal(payload)
+	if err != nil {
+		return errors.New("cannot marshal request")
 	}
+
+	request, err := http.NewRequest("POST", c.url, bytes.NewBuffer(encodedMessage))
 
 	if err != nil {
-		// Dump response
-
-		var rawResponse string
-
-		if err = websocket.JSON.Send(c.conn, request); err != nil {
-			log.Println("[APIClient][Error][Send][Dump]", err)
-		}
-
-		err = websocket.Message.Receive(c.conn, &rawResponse)
-		if err != nil {
-			log.Println("[APIClient][Error][Receive][Dump]", err)
-		}
-
-		// log.Println("[APIClient][Error][Receive]", rawResponse)
-
+		return errors.New("cannot create request")
 	}
 
-	return errors.New("receive error")
+	request.Header.Set("Content-Type", "application/json")
+	if c.jwt != "" {
+		request.Header.Set("Authorization", fmt.Sprintf("Bearer %s", c.jwt))
+	}
+
+	client := &http.Client{}
+	resp, err := client.Do(request)
+
+	if err != nil {
+		log.Println("[APIClient][Error][Send]", err)
+		time.Sleep(time.Millisecond * 100)
+		return errors.New("cannot process request")
+	}
+
+	if resp.StatusCode != 200 {
+		log.Println("[APIClient][Error][Send] Error status code", resp.StatusCode)
+		return errors.New("cannot process request")
+	}
+
+	defer resp.Body.Close()
+	data, err := ioutil.ReadAll(resp.Body)
+
+	return json.Unmarshal(data, &dst)
 }
 
 // Methods
@@ -109,6 +110,7 @@ func (c *APIClient) GetGenesis() *types.TipSet {
 	resp := &TipSet{}
 	err := c.do(ChainGetGenesis, nil, resp)
 	if err != nil {
+		log.Println("[API][Error][GetGenesis]", err)
 		return nil
 	}
 
@@ -123,6 +125,7 @@ func (c *APIClient) GetHead() *types.TipSet {
 	resp := &TipSet{}
 	err := c.do(ChainHead, nil, resp)
 	if err != nil {
+		log.Println("[API][Error][GetHead]", err)
 		return nil
 	}
 
@@ -137,6 +140,7 @@ func (c *APIClient) GetBlock(cid cid.Cid) *types.BlockHeader {
 	resp := &Block{}
 	err := c.do(ChainGetBlock, []interface{}{cid}, resp)
 	if err != nil {
+		log.Println("[API][Error][GetBlock]", err)
 		return nil
 	}
 
@@ -151,6 +155,7 @@ func (c *APIClient) GetByHeight(height abi.ChainEpoch) (*types.TipSet, bool) {
 	resp := &TipSet{}
 	err := c.do(ChainGetTipSetByHeight, []interface{}{height, types.EmptyTSK}, resp)
 	if err != nil {
+		log.Println("[API][Error][GetByHeight]", err)
 		return nil, true
 	}
 

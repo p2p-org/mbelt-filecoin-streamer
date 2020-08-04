@@ -1,30 +1,36 @@
 package main
 
 import (
+	"github.com/filecoin-project/lotus/chain/types"
 	"github.com/filecoin-project/specs-actors/actors/abi"
 	"github.com/p2p-org/mbelt-filecoin-streamer/config"
 	"github.com/p2p-org/mbelt-filecoin-streamer/services"
 	"log"
+	"os"
+	"strconv"
+	"sync"
 )
 
 const (
 	defaultHeight = 5000
+	batchCapacity = 20
 )
 
 var conf *config.Config
 
 func init() {
-	/*
-		conf = &config.Config{
-			APIUrl:     "ws://116.203.240.62:1234/rpc/v0",
-			APIToken:   "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJBbGxvdyI6WyJyZWFkIiwid3JpdGUiLCJzaWduIiwiYWRtaW4iXX0.3b1-x0KwOB1-60NzHNGsMdMyzr6b0kokzh-Z4bc400Y",
-			KafkaHosts: "localhost:9092",
-		}*/
-
 	conf = &config.Config{
-		APIUrl:     "ws://127.0.0.1:1234/rpc/v0",
-		KafkaHosts: "localhost:9092",
+		APIUrl:     os.Getenv("MBELT_FILECOIN_STREAMER_API_URL"),
+		APIToken:   os.Getenv("MBELT_FILECOIN_STREAMER_API_TOKEN"),
+		KafkaHosts: os.Getenv("MBELT_FILECOIN_STREAMER_KAFKA"), // "localhost:9092",
 	}
+
+	banner := "\nMBELT_FILECOIN_STREAMER_API_URL = " + conf.APIUrl + "\n" +
+		"MBELT_FILECOIN_STREAMER_API_TOKEN = " + conf.APIToken + "\n" +
+		"MBELT_FILECOIN_STREAMER_KAFKA = " + conf.KafkaHosts + "\n" +
+		"MBELT_FILECOIN_STREAMER_MIN_HEIGHT = " + os.Getenv("MBELT_FILECOIN_STREAMER_MIN_HEIGHT") + "\n"
+
+	log.Println(banner)
 }
 
 func main() {
@@ -38,52 +44,82 @@ func main() {
 
 	head := services.App().BlocksService().GetHead()
 
-	if head != nil && head.Height() > 0 {
+	if head != nil {
+		log.Println("[App][Debug]", "Cannot got head with height:", head.Height())
 		syncHeight = head.Height()
 	} else {
 		log.Println("[App][Debug]", "Cannot get header, use default syncHeight:", defaultHeight)
 		syncHeight = defaultHeight
 	}
 
-	for height := abi.ChainEpoch(0); height < syncHeight; height++ {
-		log.Println("[Datastore][Debug]", "Load height:", height)
+	startHeight := abi.ChainEpoch(0)
 
-		tipSet, isCanContinue := services.App().BlocksService().GetByHeight(height)
+	// Temp
+	strHeight := os.Getenv("MBELT_FILECOIN_STREAMER_MIN_HEIGHT")
+	if strHeight != "" {
+		strHeightVal, _ := strconv.ParseInt(strHeight, 10, 64)
+		startHeight = abi.ChainEpoch(strHeightVal)
+	}
 
-		if !isCanContinue {
-			log.Println("[App][Debug]", "Height reached")
-			return
+	for height := startHeight; height < syncHeight; {
+
+		wg := sync.WaitGroup{}
+		wg.Add(batchCapacity)
+
+		for workers := 0; workers < batchCapacity; workers++ {
+
+			go func(height abi.ChainEpoch) {
+				defer wg.Done()
+				_, blocks, messages := syncBlocks(height)
+				services.App().BlocksService().Push(blocks)
+				services.App().MessagesService().Push(messages)
+
+			}(height)
+
+			height++
 		}
 
-		// Empty TipSet, skipping
-		if tipSet == nil {
-			continue
-		}
+		wg.Wait()
+	}
+}
 
-		services.App().BlocksService().Push(tipSet.Blocks())
+func syncBlocks(height abi.ChainEpoch) (isHeightNotReached bool, blocks []*types.BlockHeader, messages []*types.Message) {
+	log.Println("[Datastore][Debug]", "Load height:", height)
 
-		for _, block := range tipSet.Blocks() {
-			if block.Messages.Defined() {
-				messages := services.App().MessagesService().GetBlockMessages(block.Messages)
+	tipSet, isHeightNotReached := services.App().BlocksService().GetByHeight(height)
 
-				if messages == nil {
-					continue
-				}
+	if !isHeightNotReached {
+		log.Println("[App][Debug]", "Height reached")
+		return
+	}
 
-				if len(messages.Cids) > 0 {
-					for _, messageCid := range messages.Cids {
-						message := services.App().MessagesService().GetMessage(messageCid)
+	// Empty TipSet, skipping
+	if tipSet == nil {
+		return
+	}
 
-						if message == nil {
-							continue
-						}
+	blocks = tipSet.Blocks()
 
-						services.App().MessagesService().Push(message)
+	for _, block := range tipSet.Blocks() {
+		if block.Messages.Defined() {
+			blockMessages := services.App().MessagesService().GetBlockMessages(block.Messages)
+
+			if blockMessages == nil {
+				continue
+			}
+
+			if len(blockMessages.Cids) > 0 {
+				for _, messageCid := range blockMessages.Cids {
+					message := services.App().MessagesService().GetMessage(messageCid)
+
+					if message == nil {
+						continue
 					}
+
+					messages = append(messages, message)
 				}
 			}
 		}
-
 	}
-
+	return
 }
