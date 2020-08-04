@@ -53,7 +53,7 @@ services:
       - zookeeper
       - broker
     ports:
-      - "8085:8081"
+      - "8081:8081"
     environment:
       SCHEMA_REGISTRY_HOST_NAME: schema-registry
       SCHEMA_REGISTRY_KAFKASTORE_CONNECTION_URL: 'zookeeper:2181'
@@ -67,11 +67,11 @@ services:
       - broker
       - schema-registry
     ports:
-      - "8183:8083"
+      - "8083:8083"
     environment:
       CONNECT_BOOTSTRAP_SERVERS: 'broker:29092'
       CONNECT_REST_ADVERTISED_HOST_NAME: connect
-      CONNECT_REST_PORT: 8183
+      CONNECT_REST_PORT: 8083
       CONNECT_GROUP_ID: compose-connect-group
       CONNECT_CONFIG_STORAGE_TOPIC: docker-connect-configs
       CONNECT_CONFIG_STORAGE_REPLICATION_FACTOR: 1
@@ -82,7 +82,7 @@ services:
       CONNECT_STATUS_STORAGE_REPLICATION_FACTOR: 1
       CONNECT_KEY_CONVERTER: org.apache.kafka.connect.storage.StringConverter
       CONNECT_VALUE_CONVERTER: io.confluent.connect.avro.AvroConverter
-      CONNECT_VALUE_CONVERTER_SCHEMA_REGISTRY_URL: http://schema-registry:8085
+      CONNECT_VALUE_CONVERTER_SCHEMA_REGISTRY_URL: http://schema-registry:8081
       CONNECT_INTERNAL_KEY_CONVERTER: "org.apache.kafka.connect.json.JsonConverter"
       CONNECT_INTERNAL_VALUE_CONVERTER: "org.apache.kafka.connect.json.JsonConverter"
       CONNECT_ZOOKEEPER_CONNECT: 'zookeeper:2181'
@@ -108,10 +108,10 @@ services:
     environment:
       CONTROL_CENTER_BOOTSTRAP_SERVERS: 'broker:29092'
       CONTROL_CENTER_ZOOKEEPER_CONNECT: 'zookeeper:2181'
-      CONTROL_CENTER_CONNECT_CLUSTER: 'connect:8183'
+      CONTROL_CENTER_CONNECT_CLUSTER: 'connect:8083'
       CONTROL_CENTER_KSQL_KSQLDB1_URL: "http://ksqldb-server:8088"
       CONTROL_CENTER_KSQL_KSQLDB1_ADVERTISED_URL: "http://localhost:8088"
-      CONTROL_CENTER_SCHEMA_REGISTRY_URL: "http://schema-registry:8085"
+      CONTROL_CENTER_SCHEMA_REGISTRY_URL: "http://schema-registry:8081"
       CONTROL_CENTER_REPLICATION_FACTOR: 1
       CONTROL_CENTER_INTERNAL_TOPICS_PARTITIONS: 1
       CONTROL_CENTER_MONITORING_INTERCEPTOR_TOPIC_PARTITIONS: 1
@@ -133,10 +133,10 @@ services:
       KSQL_HOST_NAME: ksqldb-server
       KSQL_LISTENERS: "http://0.0.0.0:8088"
       KSQL_CACHE_MAX_BYTES_BUFFERING: 0
-      KSQL_KSQL_SCHEMA_REGISTRY_URL: "http://schema-registry:8085"
+      KSQL_KSQL_SCHEMA_REGISTRY_URL: "http://schema-registry:8081"
       KSQL_PRODUCER_INTERCEPTOR_CLASSES: "io.confluent.monitoring.clients.interceptor.MonitoringProducerInterceptor"
       KSQL_CONSUMER_INTERCEPTOR_CLASSES: "io.confluent.monitoring.clients.interceptor.MonitoringConsumerInterceptor"
-      KSQL_KSQL_CONNECT_URL: "http://connect:8183"
+      KSQL_KSQL_CONNECT_URL: "http://connect:8083"
 
   ksqldb-cli:
     image: confluentinc/cp-ksqldb-cli:5.5.1
@@ -160,7 +160,7 @@ services:
     command: "bash -c 'echo Waiting for Kafka to be ready... && \
                            cub kafka-ready -b broker:29092 1 40 && \
                            echo Waiting for Confluent Schema Registry to be ready... && \
-                           cub sr-ready schema-registry 8085 40 && \
+                           cub sr-ready schema-registry 8081 40 && \
                            echo Waiting a few seconds for topic creation to finish... && \
                            sleep 11 && \
                            tail -f /dev/null'"
@@ -168,7 +168,7 @@ services:
       KSQL_CONFIG_DIR: "/etc/ksql"
       STREAMS_BOOTSTRAP_SERVERS: broker:29092
       STREAMS_SCHEMA_REGISTRY_HOST: schema-registry
-      STREAMS_SCHEMA_REGISTRY_PORT: 8085
+      STREAMS_SCHEMA_REGISTRY_PORT: 8081
 
   rest-proxy:
     image: confluentinc/cp-kafka-rest:5.5.1
@@ -184,7 +184,7 @@ services:
       KAFKA_REST_HOST_NAME: rest-proxy
       KAFKA_REST_BOOTSTRAP_SERVERS: 'broker:29092'
       KAFKA_REST_LISTENERS: "http://0.0.0.0:8182"
-      KAFKA_REST_SCHEMA_REGISTRY_URL: 'http://schema-registry:8085'
+      KAFKA_REST_SCHEMA_REGISTRY_URL: 'http://schema-registry:8081'
 
   db:
     image: postgres
