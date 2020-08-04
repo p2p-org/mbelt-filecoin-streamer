@@ -36,14 +36,6 @@ services:
       CONFLUENT_METRICS_REPORTER_TOPIC_REPLICAS: 1
       CONFLUENT_METRICS_ENABLE: 'true'
       CONFLUENT_SUPPORT_CUSTOMER_ID: 'anonymous'
-    deploy:
-      resources:
-        limits:
-          cpus: '0.50'
-          memory: 50M
-        reservations:
-          cpus: '0.25'
-          memory: 20M
 
   schema-registry:
     image: confluentinc/cp-schema-registry:5.5.1
@@ -202,3 +194,19 @@ services:
       POSTGRES_PASSWORD: 1234567890
       POSTGRES_USER: sink
       POSTGRES_DB: raw
+
+  filecoin-streamer-worker:
+    build: .
+    restart: always
+    container_name: filecoin-streamer-worker
+    depends_on:
+      - zookeeper
+      - broker
+      - schema-registry
+      - connect
+      - ksqldb-server
+    environment:
+      MBELT_FILECOIN_STREAMER_API_URL: http://116.203.240.62:1234/rpc/v0
+      MBELT_FILECOIN_STREAMER_API_TOKEN:
+      MBELT_FILECOIN_STREAMER_KAFKA: broker:9092
+      MBELT_FILECOIN_STREAMER_MIN_HEIGHT: 0
