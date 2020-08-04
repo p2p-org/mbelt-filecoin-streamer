@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"github.com/filecoin-project/lotus/chain/types"
 	"github.com/p2p-org/mbelt-filecoin-streamer/config"
 	"github.com/segmentio/kafka-go"
 	"log"
@@ -12,8 +11,8 @@ import (
 
 const (
 	kafkaPartition = 0
-	topicBlocks    = "blocks_stream"
-	topicMessages  = "messages_stream"
+	TopicBlocks    = "blocks_stream"
+	TopicMessages  = "messages_stream"
 )
 
 type Datastore struct {
@@ -30,7 +29,7 @@ func Init(config *config.Config) (*Datastore, error) {
 		// pushChan:     make(chan interface{}),
 	}
 
-	for _, topic := range []string{topicBlocks, topicMessages} {
+	for _, topic := range []string{TopicBlocks, TopicMessages} {
 		writer := kafka.NewWriter(kafka.WriterConfig{
 			Brokers:  []string{ds.config.KafkaHosts},
 			Topic:    topic,
@@ -45,13 +44,9 @@ func Init(config *config.Config) (*Datastore, error) {
 	return ds, nil
 }
 
-func (ds *Datastore) Push(key string, i interface{}) {
-	ds.push(key, i)
-}
-
-func (ds *Datastore) push(key string, i interface{}) (err error) {
+func (ds *Datastore) Push(topic string, m map[string]interface{}) (err error) {
 	var (
-		topic string
+		kMsgs []kafka.Message
 	)
 	// log.Println("[Datastore][push][Debug] Push data to kafka")
 
@@ -60,31 +55,27 @@ func (ds *Datastore) push(key string, i interface{}) (err error) {
 		return errors.New("cannot push")
 	}
 
-	switch i.(type) {
-	case types.BlockHeader:
-		topic = topicBlocks
-	case types.Message:
-		topic = topicMessages
-	default:
-		log.Println("[Datastore][Error][push]", "Unsupported struct")
-		return errors.New("cannot push")
-	}
-
-	data, err := json.Marshal(i)
-	if err != nil {
-		log.Println("[Datastore][Error][push]", "Cannot marshal push data", err)
-		return errors.New("cannot push")
-	}
-
 	if _, ok := ds.kafkaWriters[topic]; !ok {
 		log.Println("[Datastore][Error][push]", "Kafka writer not initialized for topic", topic)
 	}
 
-	// TODO: Add key
-	err = ds.kafkaWriters[topic].WriteMessages(context.Background(), kafka.Message{
-		Key:   []byte(key),
-		Value: data,
-	})
+	for key, value := range m {
+		data, err := json.Marshal(value)
+		if err != nil {
+			log.Println("[Datastore][Error][push]", "Cannot marshal push data", err)
+			return errors.New("cannot push")
+		}
+		kMsgs = append(kMsgs, kafka.Message{
+			Key:   []byte(key),
+			Value: data,
+		})
+	}
+
+	if len(kMsgs) == 0 {
+		return nil
+	}
+
+	err = ds.kafkaWriters[topic].WriteMessages(context.Background(), kMsgs...)
 
 	if err != nil {
 		log.Println("[Datastore][Error][push]", "Cannot produce data", err)

@@ -41,7 +41,16 @@ func (s *BlocksService) Push(blocks []*types.BlockHeader) {
 			log.Println("[MessagesService][Recover]", "Cid throw panic")
 		}
 	}()
-	for _, block := range blocks {
-		s.ds.Push(block.Cid().String(), *block)
+
+	if len(blocks) == 0 {
+		return
 	}
+
+	m := map[string]interface{}{}
+
+	for _, block := range blocks {
+		m[block.Cid().String()] = block
+	}
+
+	s.ds.Push(datastore.TopicBlocks, m)
 }
