@@ -206,8 +206,8 @@ services:
       - connect
       - ksqldb-server
     environment:
-      MBELT_FILECOIN_STREAMER_API_URL: http://docker.host.internal:1234/rpc/v0
-      MBELT_FILECOIN_STREAMER_API_WS_URL: ws://docker.host.internal:1234/rpc/v0
+      MBELT_FILECOIN_STREAMER_API_URL: http://116.203.240.62:1234/rpc/v0
+      MBELT_FILECOIN_STREAMER_API_WS_URL: ws://116.203.240.62:1234/rpc/v0
       MBELT_FILECOIN_STREAMER_API_TOKEN:
       MBELT_FILECOIN_STREAMER_KAFKA: broker:9092
       MBELT_FILECOIN_STREAMER_MIN_HEIGHT: 0
