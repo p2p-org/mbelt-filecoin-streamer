@@ -1,6 +1,8 @@
 package blocks
 
 import (
+	"context"
+	"github.com/filecoin-project/lotus/api"
 	"github.com/filecoin-project/lotus/chain/types"
 	"github.com/filecoin-project/specs-actors/actors/abi"
 	"github.com/p2p-org/mbelt-filecoin-streamer/client"
@@ -21,6 +23,10 @@ func Init(config *config.Config, ds *datastore.Datastore, apiClient *client.APIC
 		ds:     ds,
 		api:    apiClient,
 	}, nil
+}
+
+func (s *BlocksService) GetHeadUpdates(ctx context.Context, resChan *chan []*api.HeadChange) {
+	go s.api.GetHeadUpdates(ctx, resChan)
 }
 
 func (s *BlocksService) GetHead() *types.TipSet {

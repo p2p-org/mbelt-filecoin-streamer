@@ -1,6 +1,7 @@
 package client
 
 import (
+	"encoding/json"
 	"github.com/filecoin-project/lotus/api"
 	"github.com/filecoin-project/lotus/chain/types"
 )
@@ -12,9 +13,8 @@ const (
 	ChainGetTipSetByHeight = "Filecoin.ChainGetTipSetByHeight"
 	ChainGetBlockMessages  = "Filecoin.ChainGetBlockMessages"
 	ChainGetMessage        = "Filecoin.ChainGetMessage"
+	ChainNotify            = "Filecoin.ChainNotify"
 )
-
-var ()
 
 type TipSet struct {
 	APIResponse
@@ -34,4 +34,39 @@ type BlockMessages struct {
 type Message struct {
 	APIResponse
 	Result *types.Message `json:"result"` // payload
+}
+
+type HeadUpdates struct {
+	Jsonrpc string `json:"jsonrpc"`      // "2.0"
+	ID      *int64 `json:"id,omitempty"` // most likely it's nil and according to comment filecoin's go-jsonrpc library it means notification
+	Method  string `json:"method"`       // "xrpc.ch.val" (channel with value), "xrpc.ch.close", "xrpc.cancel"
+
+	Params HeadUpdatesParams `json:"params"`
+	Meta   map[string]string `json:"meta,omitempty"` // most likely empty
+}
+
+type HeadUpdatesParams struct {
+	ChanId      int // should be 1 in case of head updates
+	HeadChanges []*api.HeadChange
+}
+
+func (r *HeadUpdatesParams) UnmarshalJSON(p []byte) error {
+	var tmp []json.RawMessage
+	if err := json.Unmarshal(p, &tmp); err != nil {
+		return err
+	}
+
+	changes := make([]*api.HeadChange, 0, len(tmp) - 1)
+
+	if err := json.Unmarshal(tmp[0], &r.ChanId); err != nil {
+		return err
+	}
+
+	if err := json.Unmarshal(tmp[1], &changes); err != nil {
+		return err
+	}
+
+	r.HeadChanges = changes
+
+	return nil
 }

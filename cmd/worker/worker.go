@@ -1,6 +1,8 @@
 package main
 
 import (
+	"context"
+	"github.com/filecoin-project/lotus/api"
 	"github.com/filecoin-project/lotus/chain/types"
 	"github.com/filecoin-project/specs-actors/actors/abi"
 	"github.com/p2p-org/mbelt-filecoin-streamer/config"
@@ -21,11 +23,13 @@ var conf *config.Config
 func init() {
 	conf = &config.Config{
 		APIUrl:     os.Getenv("MBELT_FILECOIN_STREAMER_API_URL"),
+		APIWsUrl:   os.Getenv("MBELT_FILECOIN_STREAMER_API_WS_URL"),
 		APIToken:   os.Getenv("MBELT_FILECOIN_STREAMER_API_TOKEN"),
 		KafkaHosts: os.Getenv("MBELT_FILECOIN_STREAMER_KAFKA"), // "localhost:9092",
 	}
 
 	banner := "\nMBELT_FILECOIN_STREAMER_API_URL = " + conf.APIUrl + "\n" +
+		"MBELT_FILECOIN_STREAMER_API_WS_URL = " + conf.APIWsUrl + "\n" +
 		"MBELT_FILECOIN_STREAMER_API_TOKEN = " + conf.APIToken + "\n" +
 		"MBELT_FILECOIN_STREAMER_KAFKA = " + conf.KafkaHosts + "\n" +
 		"MBELT_FILECOIN_STREAMER_MIN_HEIGHT = " + os.Getenv("MBELT_FILECOIN_STREAMER_MIN_HEIGHT") + "\n"
@@ -81,6 +85,17 @@ func main() {
 
 		wg.Wait()
 	}
+
+	headUpdatesCtx, _/*cancelHeadUpdates*/ := context.WithCancel(context.Background())
+	headUpdates := make(chan []*api.HeadChange, 10)
+	services.App().BlocksService().GetHeadUpdates(headUpdatesCtx, &headUpdates)
+
+	for update := range headUpdates {
+		for _, hu := range update {
+			log.Println("[App][Debug]", "Head updates type", hu.Type)
+			log.Println("[App][Debug]", "Head updates val", hu.Val.String())
+		}
+	}
 }
 
 func syncBlocks(height abi.ChainEpoch) (isHeightNotReached bool, blocks []*types.BlockHeader, messages []*types.Message) {
@@ -100,26 +115,14 @@ func syncBlocks(height abi.ChainEpoch) (isHeightNotReached bool, blocks []*types
 
 	blocks = tipSet.Blocks()
 
-	for _, block := range tipSet.Blocks() {
-		if block.Messages.Defined() {
-			blockMessages := services.App().MessagesService().GetBlockMessages(block.Messages)
+	for _, cid := range tipSet.Cids() {
+		blockMessages := services.App().MessagesService().GetBlockMessages(cid)
 
-			if blockMessages == nil {
-				continue
-			}
-
-			if len(blockMessages.Cids) > 0 {
-				for _, messageCid := range blockMessages.Cids {
-					message := services.App().MessagesService().GetMessage(messageCid)
-
-					if message == nil {
-						continue
-					}
-
-					messages = append(messages, message)
-				}
-			}
+		if blockMessages == nil || len(blockMessages.BlsMessages) == 0 {
+			continue
 		}
+
+		messages = append(messages, blockMessages.BlsMessages...)
 	}
 	return
 }
