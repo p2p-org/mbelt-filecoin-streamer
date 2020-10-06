@@ -147,8 +147,8 @@ func (c *APIClient) GetHeadUpdates(ctx context.Context, resChan *chan []*api.Hea
 	}
 
 	cons := make(chan []byte, 100)
-	_, err = jrpcClient.Subscribe(ChainNotify, nil, &cons)
-
+	subCtx, subCancel := context.WithCancel(ctx)
+	_, err = jrpcClient.Subscribe(ChainNotify, nil, &cons, subCtx)
 	if err != nil {
 		log.Println("[API][Error][GetHeadUpdates]", err)
 		return
@@ -157,7 +157,6 @@ func (c *APIClient) GetHeadUpdates(ctx context.Context, resChan *chan []*api.Hea
 	for {
 		select {
 		case val := <-cons:
-
 			upd := &HeadUpdates{}
 			err := json.Unmarshal(val, upd)
 			if err != nil {
@@ -167,6 +166,7 @@ func (c *APIClient) GetHeadUpdates(ctx context.Context, resChan *chan []*api.Hea
 			*resChan <- upd.Params.HeadChanges
 
 		case <-ctx.Done():
+			subCancel()
 			return
 		}
 	}

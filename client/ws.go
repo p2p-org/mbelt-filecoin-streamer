@@ -41,19 +41,29 @@ func NewClient(url string) (c *RPCClient, err error) {
 	return c, nil
 }
 
-func (c *RPCClient) readLoop(consumer *chan []byte) {
+func (c *RPCClient) readLoop(consumer *chan []byte, ctx context.Context) {
 	for {
-		_, msg, err := c.conn.ReadMessage()
-		if err != nil {
-			log.Println("[RPCClient][Error][readLoop]", err)
-			continue
-		}
+		select {
+		default:
+			_, msg, err := c.conn.ReadMessage()
+			if err != nil {
+				log.Println("[RPCClient][Error][readLoop]", err)
+				continue
+			}
 
-		*consumer <- msg
+			*consumer <- msg
+
+		case <-ctx.Done():
+			err := c.conn.Close()
+			if err != nil {
+				log.Println("[RPCClient][Error][readLoop]", "Couldn't close ws connection", err)
+			}
+			return
+		}
 	}
 }
 
-func (c *RPCClient) Subscribe(method string, params []interface{}, consumer *chan []byte) (int, error) {
+func (c *RPCClient) Subscribe(method string, params []interface{}, consumer *chan []byte, ctx context.Context) (int, error) {
 	if consumer == nil {
 		return -1, errors.New("consumer channel can't be nil")
 	}
@@ -71,12 +81,12 @@ func (c *RPCClient) Subscribe(method string, params []interface{}, consumer *cha
 		return -1, err
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), requestTimeout)
-	defer cancel()
+	subMsgCtx, subMsgCancel := context.WithTimeout(ctx, requestTimeout)
+	defer subMsgCancel()
 
 	subChan := make(chan SubResponse)
 
-	// Receiving first message after subscription, it should be SubResponse type&
+	// Receiving first message after subscription, it should be SubResponse type.
 	// Goroutine and select from channel are for timeout only.
 	go func() {
 		sub := &SubResponse{}
@@ -90,13 +100,13 @@ func (c *RPCClient) Subscribe(method string, params []interface{}, consumer *cha
 	sub := SubResponse{}
 	select {
 	case sub = <-subChan:
-
-	case <-ctx.Done():
+		// Do nothing
+	case <-subMsgCtx.Done():
 		return -1, err
 	}
 
 	// Other messages handled asynchronously and sent to consumer chan.
-	go c.readLoop(consumer)
+	go c.readLoop(consumer, ctx)
 
 	return sub.Id, nil
 }
