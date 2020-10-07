@@ -8,6 +8,7 @@ import (
 	"github.com/filecoin-project/specs-actors/actors/abi"
 	"github.com/p2p-org/mbelt-filecoin-streamer/config"
 	"github.com/p2p-org/mbelt-filecoin-streamer/services"
+	"github.com/p2p-org/mbelt-filecoin-streamer/services/messages"
 	"log"
 	"os"
 	"os/signal"
@@ -150,7 +151,7 @@ func syncToHead(from int, ctx context.Context) {
 	}
 }
 
-func syncForHeight(height abi.ChainEpoch) (isHeightNotReached bool, blocks []*types.BlockHeader, messages []*types.Message) {
+func syncForHeight(height abi.ChainEpoch) (isHeightNotReached bool, blocks []*types.BlockHeader, extMessages []*messages.MessageExtended) {
 	log.Println("[Datastore][Debug]", "Load height:", height)
 
 	tipSet, isHeightNotReached := services.App().BlocksService().GetByHeight(height)
@@ -166,14 +167,21 @@ func syncForHeight(height abi.ChainEpoch) (isHeightNotReached bool, blocks []*ty
 	}
 
 	blocks = tipSet.Blocks()
-	for _, cid := range tipSet.Cids() {
-		blockMessages := services.App().MessagesService().GetBlockMessages(cid)
+	for _, block := range blocks {
+		blockMessages := services.App().MessagesService().GetBlockMessages(block.Cid())
 
 		if blockMessages == nil || len(blockMessages.BlsMessages) == 0 {
 			continue
 		}
 
-		messages = append(messages, blockMessages.BlsMessages...)
+		for _, blsMessage := range blockMessages.BlsMessages {
+			extMessages = append(extMessages, &messages.MessageExtended{
+				BlockCid:  block.Cid(),
+				Message:   blsMessage,
+				Timestamp: block.Timestamp,
+			})
+		}
+
 	}
 	return
 }

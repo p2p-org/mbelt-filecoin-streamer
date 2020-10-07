@@ -7,9 +7,10 @@
     "topics": "MESSAGES_STREAM_AVRO",
     "connection.url": "jdbc:postgresql://db:5432/raw?user=sink&password=1234567890",
     "dialect.name": "PostgreSqlDatabaseDialect",
-    "insert.mode": "INSERT",
+    "insert.mode": "UPSERT",
     "table.name.format": "messages",
-    "pk.mode": "none",
+    "pk.mode": "record_value",
+    "pk.fields": "cid",
     "auto.create": "true",
     "auto.evolve": "true",
     "value.converter.schema.registry.url": "http://schema-registry:8081"
