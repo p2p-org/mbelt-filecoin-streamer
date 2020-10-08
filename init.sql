@@ -2,7 +2,7 @@ CREATE SCHEMA IF NOT EXISTS filecoin;
 
 CREATE TABLE IF NOT EXISTS filecoin.blocks
 (
-    "cid"           VARCHAR(256) NOT NULL PRIMARY KEY,
+    "cid"           VARCHAR(256) NOT NULL,
     "height"        BIGINT,
     "win_count"     INT,
     "miner"         VARCHAR(128),
@@ -17,7 +17,7 @@ CREATE TABLE IF NOT EXISTS filecoin.blocks
 
 CREATE TABLE IF NOT EXISTS filecoin.messages
 (
-    "cid"        VARCHAR(256) NOT NULL PRIMARY KEY,
+    "cid"        VARCHAR(256) NOT NULL,
     "block_cid"  VARCHAR(256),
     "method"     INT,
     "from"       VARCHAR(256),
@@ -96,6 +96,7 @@ $$
 CREATE TRIGGER trg_blocks_sink_upsert
     BEFORE INSERT
     ON filecoin._blocks
+    FOR EACH ROW
 EXECUTE PROCEDURE filecoin.sink_blocks_insert();
 
 
@@ -115,6 +116,7 @@ $$
 CREATE TRIGGER trg_blocks_sink_trim_after_upsert
     AFTER INSERT
     ON filecoin._blocks
+    FOR EACH ROW
 EXECUTE PROCEDURE filecoin.sink_trim_blocks_after_insert();
 
 
@@ -154,6 +156,7 @@ $$
 CREATE TRIGGER trg_messages_sink_upsert
     BEFORE INSERT
     ON filecoin._messages
+    FOR EACH ROW
 EXECUTE PROCEDURE filecoin.sink_messages_insert();
 
 
@@ -172,9 +175,15 @@ $$
 CREATE TRIGGER trg_messages_sink_trim_after_upsert
     AFTER INSERT
     ON filecoin._messages
+    FOR EACH ROW
 EXECUTE PROCEDURE filecoin.sink_trim_messages_after_insert();
 
 
 -- Create indexes
 
 CREATE INDEX filecoin.block_height_idx ON filecoin.blocks ("height");
+
+-- tmp
+CREATE INDEX filecoin.block_height_idx ON filecoin.blocks ("cid");
+CREATE INDEX filecoin.block_height_idx ON filecoin.messages ("cid");
+
