@@ -4,6 +4,7 @@ CREATE TABLE IF NOT EXISTS filecoin.blocks
 (
     "cid"           VARCHAR(256) NOT NULL,
     "height"        BIGINT,
+    "parents"       JSONB,
     "win_count"     INT,
     "miner"         VARCHAR(128),
     "messages_cid"  VARCHAR(256),
@@ -35,6 +36,7 @@ CREATE TABLE IF NOT EXISTS filecoin._blocks
 (
     "cid"           VARCHAR(256) NOT NULL PRIMARY KEY,
     "height"        BIGINT,
+    "parents"       TEXT,
     "win_count"     INT,
     "miner"         VARCHAR(128),
     "messages_cid"  VARCHAR(256),
@@ -68,6 +70,7 @@ $$
 BEGIN
     INSERT INTO filecoin.blocks("cid",
                                 "height",
+                                "parents",
                                 "win_count",
                                 "miner",
                                 "messages_cid",
@@ -78,6 +81,7 @@ BEGIN
                                 "block_time")
     VALUES (NEW."cid",
             NEW."height",
+            to_jsonb(NEW."parents"),
             NEW."win_count",
             NEW."miner",
             NEW."messages_cid",
