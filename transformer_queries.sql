@@ -1,6 +1,7 @@
 CREATE STREAM BLOCKS_STREAM (
   "cid" VARCHAR,
   "height" BIGINT,
+  "parents" VARCHAR,
   "win_count" INTEGER,
   "miner" VARCHAR,
   "messages_cid" VARCHAR,
