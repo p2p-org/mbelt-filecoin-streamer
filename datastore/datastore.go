@@ -13,6 +13,7 @@ const (
 	kafkaPartition = 0
 	TopicBlocks    = "blocks_stream"
 	TopicMessages  = "messages_stream"
+	TipSetBlocks   = "tipset_stream"
 )
 
 type Datastore struct {
