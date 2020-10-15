@@ -5,4 +5,5 @@ type Config struct {
 	APIWsUrl   string
 	APIToken   string
 	KafkaHosts string
+	PgUrl      string
 }

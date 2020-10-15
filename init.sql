@@ -30,6 +30,21 @@ CREATE TABLE IF NOT EXISTS filecoin.messages
     "block_time" TIMESTAMP
 );
 
+CREATE TABLE IF NOT EXISTS filecoin.blocks_to_revert
+(
+    "cid"           VARCHAR(256) NOT NULL PRIMARY KEY,
+    "height"        BIGINT,
+    "parents"       TEXT,
+    "win_count"     INT,
+    "miner"         VARCHAR(128),
+    "messages_cid"  VARCHAR(256),
+    "validated"     BOOLEAN,
+    "blocksig"      TEXT,
+    "bls_aggregate" TEXT,
+    "block"         TEXT,
+    "block_time"    BIGINT
+);
+
 -- Temp tbls
 
 CREATE TABLE IF NOT EXISTS filecoin._blocks
@@ -123,6 +138,42 @@ CREATE TRIGGER trg_blocks_sink_trim_after_upsert
     FOR EACH ROW
 EXECUTE PROCEDURE filecoin.sink_trim_blocks_after_insert();
 
+-- Blocks to revert
+
+CREATE OR REPLACE FUNCTION filecoin.sink_revert_blocks()
+    RETURNS trigger AS
+$$
+BEGIN
+    DELETE FROM filecoin.blocks WHERE "cid" = NEW."cid";
+    DELETE FROM filecoin.messages WHERE "block_cid" = NEW."cid";
+    RETURN NEW;
+END ;
+
+$$
+    LANGUAGE 'plpgsql';
+
+CREATE TRIGGER trg_blocks_sink_revert
+    BEFORE INSERT
+    ON filecoin.blocks_to_revert
+    FOR EACH ROW
+EXECUTE PROCEDURE filecoin.sink_revert_blocks();
+
+CREATE OR REPLACE FUNCTION filecoin.sink_trim_blocks_to_revert_after_insert()
+    RETURNS trigger AS
+$$
+BEGIN
+    DELETE FROM filecoin.blocks_to_revert WHERE "cid" = NEW."cid";
+    RETURN NEW;
+END ;
+
+$$
+    LANGUAGE 'plpgsql';
+
+CREATE TRIGGER trg_blocks_to_revert_sink_trim_after_upsert
+    AFTER INSERT
+    ON filecoin.blocks_to_revert
+    FOR EACH ROW
+EXECUTE PROCEDURE filecoin.sink_trim_blocks_to_revert_after_insert();
 
 -- Messages
 

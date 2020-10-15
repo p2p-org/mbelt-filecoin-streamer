@@ -19,6 +19,11 @@ import (
 const (
 	defaultHeight = 5000
 	batchCapacity = 20
+
+	// current event is current head. We receive it once right after subscription on head updates
+	HeadEventCurrent = "current"
+	HeadEventApply   = "apply"
+	HeadEventRevert  = "revert"
 )
 
 var conf *config.Config
@@ -29,12 +34,14 @@ func init() {
 		APIWsUrl:   os.Getenv("MBELT_FILECOIN_STREAMER_API_WS_URL"),
 		APIToken:   os.Getenv("MBELT_FILECOIN_STREAMER_API_TOKEN"),
 		KafkaHosts: os.Getenv("MBELT_FILECOIN_STREAMER_KAFKA"), // "localhost:9092",
+		PgUrl:      os.Getenv("MBELT_FILECOIN_STREAMER_PG_URL"),
 	}
 
 	banner := "\nMBELT_FILECOIN_STREAMER_API_URL = " + conf.APIUrl + "\n" +
 		"MBELT_FILECOIN_STREAMER_API_WS_URL = " + conf.APIWsUrl + "\n" +
 		"MBELT_FILECOIN_STREAMER_API_TOKEN = " + conf.APIToken + "\n" +
-		"MBELT_FILECOIN_STREAMER_KAFKA = " + conf.KafkaHosts + "\n"
+		"MBELT_FILECOIN_STREAMER_KAFKA = " + conf.KafkaHosts + "\n" +
+		"MBELT_FILECOIN_STREAMER_PG_URL = " + conf.PgUrl + "\n"
 
 	log.Println(banner)
 }
@@ -46,10 +53,11 @@ func main() {
 		return
 	}
 
-	syncFromDB := flag.Bool("sync", true, "Turn on sync starting from last block in DB")
+	sync := flag.Bool("sync", true, "Turn on sync starting from last block in DB")
 	syncForce := flag.Bool("sync-force", false, "Turn on sync starting from genesis block")
 	updHead := flag.Bool("sub-head-updates", true, "Turn on subscription on head updates")
-	syncFrom := flag.Int("sync-from", -1, "Turn on subscription on head updates")
+	syncFrom := flag.Int("sync-from", -1, "Height to start sync from. Dont provide or provide negative number to sync from max height in DB")
+	syncFromDbOffset := flag.Int("sync-from-db-offset", 100, "Specify offset from max height in DB to start sync from (maxHeightInDb - offset)")
 
 	syncCtx, syncCancel := context.WithCancel(context.Background())
 	updCtx, updCancel := context.WithCancel(context.Background())
@@ -71,14 +79,25 @@ func main() {
 		syncToHead(0, syncCtx)
 	}
 
-	if syncFromDB != nil && *syncFromDB {
+	if sync != nil && *sync {
 		if syncFrom != nil && *syncFrom >= 0 {
 			syncToHead(*syncFrom, syncCtx)
 		} else {
-			// get last height from Db and start sync
-			//syncToHead(heightFromDb, syncCtx)
-			// TODO: Temporary!
-			syncToHead(0, syncCtx)
+			heightFromDb, err := services.App().BlocksService().GetMaxHeightFromDB()
+			if err != nil {
+				log.Println("Can't get max height from postgres DB, stopping...")
+				log.Println(err)
+				return
+			}
+
+			if syncFromDbOffset != nil && heightFromDb < *syncFromDbOffset {
+				syncToHead(0, syncCtx)
+			} else if syncFromDbOffset != nil {
+				syncToHead(heightFromDb - *syncFromDbOffset, syncCtx)
+			} else {
+				log.Println("sync-from-db-offset is nil, syncing from max height in DB with no offset")
+				syncToHead(heightFromDb, syncCtx)
+			}
 		}
 	}
 
@@ -91,17 +110,43 @@ func main() {
 
 func updateHeads(ctx context.Context) {
 	headUpdatesCtx, cancelHeadUpdates := context.WithCancel(ctx)
-	headUpdates := make(chan []*api.HeadChange, 10)
+	// Buffer is that big for channel to be able to store some head updates while we are syncing till "current" block
+	// TODO: This approach is not solid. Think how we can do it better.
+	headUpdates := make(chan []*api.HeadChange, 1000)
 	services.App().BlocksService().GetHeadUpdates(headUpdatesCtx, &headUpdates)
 
-	// TODO: handle "apply", "current" and "revert" events
-	// TODO: Also we have to check that we've already synced till "current" block, that we receive first, when subscribing to head events
 	for {
 		select {
 		case update := <-headUpdates:
 			for _, hu := range update {
-				log.Println("[App][Debug]", "Head updates type", hu.Type)
-				log.Println("[App][Debug]", "Head updates val", hu.Val.String())
+				switch hu.Type {
+
+				case HeadEventCurrent:
+					currentHeight := int(hu.Val.Height())
+					maxHeightInDb, err := services.App().BlocksService().GetMaxHeightFromDB()
+					if err != nil {
+						log.Println("[App][Error][updateHeads]", "couldn't get max height from DB. Error:", err)
+						cancelHeadUpdates()
+						return
+					}
+					if currentHeight > maxHeightInDb {
+						syncTo(maxHeightInDb, currentHeight, ctx)
+					}
+					// Pushing block and its messages to kafka just in case.
+					// TODO: Duplicates should be handled on db's side
+					pushBlocksAndTheirMessages(hu.Val.Blocks())
+
+				case HeadEventRevert:
+					services.App().BlocksService().PushBlocksToRevert(hu.Val.Blocks())
+
+				case HeadEventApply:
+					pushBlocksAndTheirMessages(hu.Val.Blocks())
+
+				default:
+					log.Println("[App][Debug][updateHeads]", "yet unknown event encountered:", hu.Type)
+					// Pushing just in case
+					pushBlocksAndTheirMessages(hu.Val.Blocks())
+				}
 			}
 		case <-ctx.Done():
 			cancelHeadUpdates()
@@ -112,18 +157,22 @@ func updateHeads(ctx context.Context) {
 }
 
 func syncToHead(from int, ctx context.Context) {
-	var syncHeight abi.ChainEpoch
 	head := services.App().BlocksService().GetHead()
-
 	if head != nil {
-		log.Println("[App][Debug]", "Cannot get head with height:", head.Height())
-		syncHeight = head.Height()
+		syncTo(from, int(head.Height()), ctx)
 	} else {
-		log.Println("[App][Debug]", "Cannot get header, use default syncHeight:", defaultHeight)
+		syncTo(from, 0, ctx)
+	}
+}
+
+func syncTo(from int, to int, ctx context.Context) {
+	syncHeight := abi.ChainEpoch(to)
+	if to <= from {
+		log.Println("[App][Debug][sync]", "Specified sync height is too small, syncing to default height:", defaultHeight)
 		syncHeight = defaultHeight
 	}
 
-	defer log.Println("[App][Debug][syncToHead]", "finished sync")
+	defer log.Println("[App][Debug][sync]", "finished sync")
 	startHeight := abi.ChainEpoch(from)
 	for height := startHeight; height < syncHeight; {
 		select {
@@ -135,9 +184,9 @@ func syncToHead(from int, ctx context.Context) {
 
 				go func(height abi.ChainEpoch) {
 					defer wg.Done()
-					_, blocks, messages := syncForHeight(height)
-					services.App().BlocksService().Push(blocks)
-					services.App().MessagesService().Push(messages)
+					_, blocks, msgs := syncForHeight(height)
+					services.App().BlocksService().PushBlocks(blocks)
+					services.App().MessagesService().Push(msgs)
 
 				}(height)
 
@@ -167,6 +216,12 @@ func syncForHeight(height abi.ChainEpoch) (isHeightNotReached bool, blocks []*ty
 	}
 
 	blocks = tipSet.Blocks()
+	extMessages = getBlockMessages(blocks)
+
+	return
+}
+
+func getBlockMessages(blocks []*types.BlockHeader) (msgs []*messages.MessageExtended) {
 	for _, block := range blocks {
 		blockMessages := services.App().MessagesService().GetBlockMessages(block.Cid())
 
@@ -175,7 +230,7 @@ func syncForHeight(height abi.ChainEpoch) (isHeightNotReached bool, blocks []*ty
 		}
 
 		for _, blsMessage := range blockMessages.BlsMessages {
-			extMessages = append(extMessages, &messages.MessageExtended{
+			msgs = append(msgs, &messages.MessageExtended{
 				BlockCid:  block.Cid(),
 				Message:   blsMessage,
 				Timestamp: block.Timestamp,
@@ -183,5 +238,12 @@ func syncForHeight(height abi.ChainEpoch) (isHeightNotReached bool, blocks []*ty
 		}
 
 	}
-	return
+
+	return msgs
+}
+
+func pushBlocksAndTheirMessages(blocks []*types.BlockHeader) {
+	msgs := getBlockMessages(blocks)
+	services.App().BlocksService().PushBlocks(blocks)
+	services.App().MessagesService().Push(msgs)
 }
