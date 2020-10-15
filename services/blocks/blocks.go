@@ -8,20 +8,23 @@ import (
 	"github.com/p2p-org/mbelt-filecoin-streamer/client"
 	"github.com/p2p-org/mbelt-filecoin-streamer/config"
 	"github.com/p2p-org/mbelt-filecoin-streamer/datastore"
+	"github.com/p2p-org/mbelt-filecoin-streamer/datastore/pg"
 	"log"
 )
 
 type BlocksService struct {
-	config *config.Config
-	ds     *datastore.Datastore
-	api    *client.APIClient
+	config  *config.Config
+	kafkaDs *datastore.KafkaDatastore
+	pgDs    *pg.PgDatastore
+	api     *client.APIClient
 }
 
-func Init(config *config.Config, ds *datastore.Datastore, apiClient *client.APIClient) (*BlocksService, error) {
+func Init(config *config.Config, kafkaDs *datastore.KafkaDatastore, pgDs *pg.PgDatastore, apiClient *client.APIClient) (*BlocksService, error) {
 	return &BlocksService{
-		config: config,
-		ds:     ds,
-		api:    apiClient,
+		config:  config,
+		kafkaDs: kafkaDs,
+		pgDs:    pgDs,
+		api:     apiClient,
 	}, nil
 }
 
@@ -41,7 +44,19 @@ func (s *BlocksService) GetByHeight(height abi.ChainEpoch) (*types.TipSet, bool)
 	return s.api.GetByHeight(height)
 }
 
-func (s *BlocksService) Push(blocks []*types.BlockHeader) {
+func (s *BlocksService) GetMaxHeightFromDB() (int, error) {
+	 return s.pgDs.GetMaxHeight()
+}
+
+func (s *BlocksService) PushBlocks(blocks []*types.BlockHeader) {
+	s.push(datastore.TopicBlocks, blocks)
+}
+
+func (s *BlocksService) PushBlocksToRevert(blocks []*types.BlockHeader) {
+	s.push(datastore.TopicBlocksToRevert, blocks)
+}
+
+func (s *BlocksService) push(topic string, blocks []*types.BlockHeader) {
 	defer func() {
 		if r := recover(); r != nil {
 			log.Println("[MessagesService][Recover]", "Cid throw panic")
@@ -58,7 +73,7 @@ func (s *BlocksService) Push(blocks []*types.BlockHeader) {
 		m[block.Cid().String()] = serializeHeader(block)
 	}
 
-	s.ds.Push(datastore.TopicBlocks, m)
+	s.kafkaDs.Push(topic, m)
 }
 
 func serializeHeader(header *types.BlockHeader) map[string]interface{} {

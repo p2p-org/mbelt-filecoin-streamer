@@ -214,3 +214,4 @@ services:
       MBELT_FILECOIN_STREAMER_API_WS_URL: ws://116.203.240.62:1234/rpc/v0
       MBELT_FILECOIN_STREAMER_API_TOKEN:
       MBELT_FILECOIN_STREAMER_KAFKA: broker:9092
+      MBELT_FILECOIN_STREAMER_PG_URL: postgres://db:5432/raw?user=sink&password=Ekj31R2_03S2IwLoPsWVa28_sMx_xoS&sslmode=disable

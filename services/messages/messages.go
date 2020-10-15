@@ -12,7 +12,7 @@ import (
 
 type MessagesService struct {
 	config *config.Config
-	ds     *datastore.Datastore
+	ds     *datastore.KafkaDatastore
 	api    *client.APIClient
 }
 
@@ -22,7 +22,7 @@ type MessageExtended struct {
 	Timestamp uint64
 }
 
-func Init(config *config.Config, ds *datastore.Datastore, apiClient *client.APIClient) (*MessagesService, error) {
+func Init(config *config.Config, ds *datastore.KafkaDatastore, apiClient *client.APIClient) (*MessagesService, error) {
 	return &MessagesService{
 		config: config,
 		ds:     ds,
