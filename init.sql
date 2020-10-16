@@ -2,7 +2,7 @@ CREATE SCHEMA IF NOT EXISTS filecoin;
 
 CREATE TABLE IF NOT EXISTS filecoin.blocks
 (
-    "cid"           VARCHAR(256) NOT NULL,
+    "cid"           VARCHAR(256) NOT NULL PRIMARY KEY,
     "height"        BIGINT,
     "parents"       JSONB,
     "win_count"     INT,
@@ -18,7 +18,7 @@ CREATE TABLE IF NOT EXISTS filecoin.blocks
 
 CREATE TABLE IF NOT EXISTS filecoin.messages
 (
-    "cid"        VARCHAR(256) NOT NULL,
+    "cid"        VARCHAR(256) NOT NULL PRIMARY KEY,
     "block_cid"  VARCHAR(256),
     "method"     INT,
     "from"       VARCHAR(256),
@@ -30,6 +30,17 @@ CREATE TABLE IF NOT EXISTS filecoin.messages
     "block_time" TIMESTAMP
 );
 
+CREATE TABLE IF NOT EXISTS filecoin.tipsets
+(
+    "height"        BIGINT NOT NULL PRIMARY KEY,
+    "parents"       VARCHAR(256)[],
+    "parent_weight" BIGINT,
+    "parent_state"  VARCHAR,
+    "blocks"        VARCHAR(256)[],
+    "min_timestamp" TIMESTAMP
+);
+
+-- Internal tables
 CREATE TABLE IF NOT EXISTS filecoin.blocks_to_revert
 (
     "cid"           VARCHAR(256) NOT NULL PRIMARY KEY,
@@ -46,6 +57,12 @@ CREATE TABLE IF NOT EXISTS filecoin.blocks_to_revert
 );
 
 -- Temp tbls
+
+CREATE OR REPLACE FUNCTION varchar_to_jsonb(varchar) RETURNS jsonb AS
+$$
+SELECT to_jsonb($1)
+$$ LANGUAGE SQL;
+CREATE CAST (varchar as jsonb) WITH FUNCTION varchar_to_jsonb(varchar) AS IMPLICIT;
 
 CREATE TABLE IF NOT EXISTS filecoin._blocks
 (
@@ -77,6 +94,17 @@ CREATE TABLE IF NOT EXISTS filecoin._messages
     "block_time" BIGINT
 );
 
+CREATE TABLE IF NOT EXISTS filecoin._tipsets
+(
+    "height"        BIGINT NOT NULL PRIMARY KEY,
+    "parents"       TEXT,
+    "parent_weight" BIGINT,
+    "parent_state"  VARCHAR,
+    "blocks"        TEXT,
+    "min_timestamp" BIGINT
+);
+
+
 -- Blocks
 
 CREATE OR REPLACE FUNCTION filecoin.sink_blocks_insert()
@@ -96,15 +124,16 @@ BEGIN
                                 "block_time")
     VALUES (NEW."cid",
             NEW."height",
-            to_jsonb(NEW."parents"),
+            varchar_to_jsonb(NEW."parents"),
             NEW."win_count",
             NEW."miner",
             NEW."messages_cid",
             NEW."validated",
-            to_jsonb(NEW."blocksig"),
-            to_jsonb(NEW."bls_aggregate"),
-            to_jsonb(NEW."block"),
-            to_timestamp(NEW."block_time"));
+            varchar_to_jsonb(NEW."blocksig"),
+            varchar_to_jsonb(NEW."bls_aggregate"),
+            varchar_to_jsonb(NEW."block"),
+            to_timestamp(NEW."block_time"))
+    ON CONFLICT DO NOTHING;
 
     RETURN NEW;
 END ;
@@ -197,10 +226,11 @@ BEGIN
             NEW."from",
             NEW."to",
             NEW."value",
-            to_jsonb(NEW."gas"),
+            varchar_to_jsonb(NEW."gas"),
             NEW."params",
-            to_jsonb(NEW."data"),
-            to_timestamp(NEW."block_time"));
+            varchar_to_jsonb(NEW."data"),
+            to_timestamp(NEW."block_time"))
+    ON CONFLICT DO NOTHING;
 
     RETURN NEW;
 END;
@@ -234,11 +264,62 @@ CREATE TRIGGER trg_messages_sink_trim_after_upsert
 EXECUTE PROCEDURE filecoin.sink_trim_messages_after_insert();
 
 
+-- TipSets
+
+CREATE OR REPLACE FUNCTION filecoin.sink_tipsets_insert()
+    RETURNS trigger AS
+$$
+BEGIN
+    INSERT INTO filecoin.tipsets("height",
+                                 "parents",
+                                 "parent_weight",
+                                 "parent_state",
+                                 "blocks",
+                                 "min_timestamp")
+    VALUES (NEW."height",
+            NEW."parents"::varchar(256)[],
+            NEW."parent_weight",
+            NEW."parent_state",
+            NEW."blocks"::varchar(256)[],
+            to_timestamp(NEW."min_timestamp"))
+    ON CONFLICT DO NOTHING;
+
+    RETURN NEW;
+END;
+
+$$
+    LANGUAGE 'plpgsql';
+
+CREATE TRIGGER trg_tipsets_sink_upsert
+    BEFORE INSERT
+    ON filecoin._tipsets
+    FOR EACH ROW
+EXECUTE PROCEDURE filecoin.sink_tipsets_insert();
+
+
+
+CREATE OR REPLACE FUNCTION filecoin.sink_trim_tipsets_after_insert()
+    RETURNS trigger AS
+$$
+BEGIN
+    DELETE FROM filecoin._tipsets WHERE "height" = NEW."height";
+    RETURN NEW;
+END ;
+
+$$
+    LANGUAGE 'plpgsql';
+
+CREATE TRIGGER trg_tipsets_sink_trim_after_upsert
+    AFTER INSERT
+    ON filecoin._tipsets
+    FOR EACH ROW
+EXECUTE PROCEDURE filecoin.sink_trim_tipsets_after_insert();
+
 -- Create indexes
 
-CREATE INDEX filecoin.block_height_idx ON filecoin.blocks ("height");
+CREATE INDEX filecoin_block_height_idx ON filecoin.blocks ("height");
 
 -- tmp
-CREATE INDEX filecoin.block_height_idx ON filecoin.blocks ("cid");
-CREATE INDEX filecoin.block_height_idx ON filecoin.messages ("cid");
+CREATE INDEX filecoin_block_cid_idx ON filecoin.blocks ("cid");
+CREATE INDEX filecoin_messages_cid_idx ON filecoin.messages ("cid");
 

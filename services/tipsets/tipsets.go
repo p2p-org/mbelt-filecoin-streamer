@@ -6,16 +6,17 @@ import (
 	"github.com/p2p-org/mbelt-filecoin-streamer/client"
 	"github.com/p2p-org/mbelt-filecoin-streamer/config"
 	"github.com/p2p-org/mbelt-filecoin-streamer/datastore"
+	"github.com/p2p-org/mbelt-filecoin-streamer/datastore/utils"
 	"log"
 )
 
 type TipSetsService struct {
 	config *config.Config
-	ds     *datastore.Datastore
+	ds     *datastore.KafkaDatastore
 	api    *client.APIClient
 }
 
-func Init(config *config.Config, ds *datastore.Datastore, apiClient *client.APIClient) (*TipSetsService, error) {
+func Init(config *config.Config, ds *datastore.KafkaDatastore, apiClient *client.APIClient) (*TipSetsService, error) {
 	return &TipSetsService{
 		config: config,
 		ds:     ds,
@@ -46,26 +47,33 @@ func (s *TipSetsService) Push(tipset *types.TipSet) {
 		tipset.Height().String(): serializeTipSet(tipset),
 	}
 
-	s.ds.Push(datastore.TipSetBlocks, m)
+	s.ds.Push(datastore.TopicTipSets, m)
 }
 
 func serializeTipSet(tipset *types.TipSet) map[string]interface{} {
 	result := map[string]interface{}{
-		"key":           tipset.Key().String(),
 		"height":        tipset.Height(),
-		"parents":       tipset.Parents().String(),
 		"parent_weight": tipset.ParentWeight(),
 		"parent_state":  tipset.ParentState().String(),
+		"min_timestamp": tipset.MinTimestamp(),
 	}
 
 	blocksCids := make([]string, 0)
 
-	for _, block := range tipset.Blocks() {
-		blocksCids = append(blocksCids, block.Cid().String())
+	for _, cid := range tipset.Cids() {
+		blocksCids = append(blocksCids, cid.String())
 	}
-	log.Println("cids", tipset.Cids())
-	log.Println("Block cids", blocksCids)
-	result["blocks"] = blocksCids
+	result["blocks"] = utils.ToVarcharArray(blocksCids)
+
+	parentsCids := make([]string, 0)
+
+	if len(tipset.Blocks()) > 0 {
+		for _, cid := range tipset.Blocks()[0].Parents {
+			parentsCids = append(parentsCids, cid.String())
+		}
+	}
+
+	result["parents"] = utils.ToVarcharArray(parentsCids)
 
 	return result
 }

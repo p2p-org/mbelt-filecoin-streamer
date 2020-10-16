@@ -42,11 +42,11 @@ func (s *MessagesService) Push(messages []*MessageExtended) {
 	// Empty messages has panic
 	defer func() {
 		if r := recover(); r != nil {
-			log.Println("[MessagesService][Recover]", "Cid throw panic")
+			log.Println("[MessagesService][Recover]", "Throw panic", r)
 		}
 	}()
 
-	if len(messages) == 0 {
+	if messages == nil {
 		return
 	}
 

@@ -8,6 +8,7 @@ import (
 	"github.com/p2p-org/mbelt-filecoin-streamer/services/blocks"
 	"github.com/p2p-org/mbelt-filecoin-streamer/services/messages"
 	"github.com/p2p-org/mbelt-filecoin-streamer/services/processor"
+	"github.com/p2p-org/mbelt-filecoin-streamer/services/tipsets"
 )
 
 var (
@@ -17,6 +18,7 @@ var (
 type ServiceProvider struct {
 	blocksService    *blocks.BlocksService
 	messagesService  *messages.MessagesService
+	tipsetsService   *tipsets.TipSetsService
 	processorService *processor.ProcessorService
 }
 
@@ -30,6 +32,12 @@ func (p *ServiceProvider) Init(config *config.Config, kafkaDs *datastore.KafkaDa
 	}
 
 	p.messagesService, err = messages.Init(config, kafkaDs, apiClient)
+
+	if err != nil {
+		return err
+	}
+
+	p.tipsetsService, err = tipsets.Init(config, kafkaDs, apiClient)
 
 	if err != nil {
 		return err
@@ -50,6 +58,10 @@ func (p *ServiceProvider) BlocksService() *blocks.BlocksService {
 
 func (p *ServiceProvider) MessagesService() *messages.MessagesService {
 	return p.messagesService
+}
+
+func (p *ServiceProvider) TipSetsService() *tipsets.TipSetsService {
+	return p.tipsetsService
 }
 
 func (p *ServiceProvider) ProcessorService() *processor.ProcessorService {

@@ -93,7 +93,7 @@ func main() {
 			if syncFromDbOffset != nil && heightFromDb < *syncFromDbOffset {
 				syncToHead(0, syncCtx)
 			} else if syncFromDbOffset != nil {
-				syncToHead(heightFromDb - *syncFromDbOffset, syncCtx)
+				syncToHead(heightFromDb-*syncFromDbOffset, syncCtx)
 			} else {
 				log.Println("sync-from-db-offset is nil, syncing from max height in DB with no offset")
 				syncToHead(heightFromDb, syncCtx)
@@ -157,7 +157,7 @@ func updateHeads(ctx context.Context) {
 }
 
 func syncToHead(from int, ctx context.Context) {
-	head := services.App().BlocksService().GetHead()
+	head := services.App().TipSetsService().GetHead()
 	if head != nil {
 		syncTo(from, int(head.Height()), ctx)
 	} else {
@@ -184,7 +184,8 @@ func syncTo(from int, to int, ctx context.Context) {
 
 				go func(height abi.ChainEpoch) {
 					defer wg.Done()
-					_, blocks, msgs := syncForHeight(height)
+					_, tipSet, blocks, msgs := syncForHeight(height)
+					services.App().TipSetsService().Push(tipSet)
 					services.App().BlocksService().PushBlocks(blocks)
 					services.App().MessagesService().Push(msgs)
 
@@ -200,10 +201,10 @@ func syncTo(from int, to int, ctx context.Context) {
 	}
 }
 
-func syncForHeight(height abi.ChainEpoch) (isHeightNotReached bool, blocks []*types.BlockHeader, extMessages []*messages.MessageExtended) {
+func syncForHeight(height abi.ChainEpoch) (isHeightNotReached bool, tipSet *types.TipSet, blocks []*types.BlockHeader, extMessages []*messages.MessageExtended) {
 	log.Println("[Datastore][Debug]", "Load height:", height)
 
-	tipSet, isHeightNotReached := services.App().BlocksService().GetByHeight(height)
+	tipSet, isHeightNotReached = services.App().TipSetsService().GetByHeight(height)
 
 	if !isHeightNotReached {
 		log.Println("[App][Debug]", "Height reached")

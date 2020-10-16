@@ -10,10 +10,10 @@ import (
 )
 
 const (
-	kafkaPartition = 0
-	TopicBlocks    = "blocks_stream"
-	TopicMessages  = "messages_stream"
-	TipSetBlocks   = "tipset_stream"
+	kafkaPartition      = 0
+	TopicBlocks         = "blocks_stream"
+	TopicMessages       = "messages_stream"
+	TopicTipSets        = "tipsets_stream"
 	TopicBlocksToRevert = "blocks_to_revert_stream"
 )
 
@@ -31,7 +31,7 @@ func Init(config *config.Config) (*KafkaDatastore, error) {
 		// pushChan:     make(chan interface{}),
 	}
 
-	for _, topic := range []string{TopicBlocks, TopicBlocksToRevert, TopicMessages} {
+	for _, topic := range []string{TopicBlocks, TopicBlocksToRevert, TopicMessages, TopicTipSets} {
 		writer := kafka.NewWriter(kafka.WriterConfig{
 			Brokers:  []string{ds.config.KafkaHosts},
 			Topic:    topic,

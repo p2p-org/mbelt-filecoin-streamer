@@ -4,7 +4,6 @@ import (
 	"context"
 	"github.com/filecoin-project/lotus/api"
 	"github.com/filecoin-project/lotus/chain/types"
-	"github.com/filecoin-project/specs-actors/actors/abi"
 	"github.com/p2p-org/mbelt-filecoin-streamer/client"
 	"github.com/p2p-org/mbelt-filecoin-streamer/config"
 	"github.com/p2p-org/mbelt-filecoin-streamer/datastore"
@@ -32,20 +31,8 @@ func (s *BlocksService) GetHeadUpdates(ctx context.Context, resChan *chan []*api
 	go s.api.GetHeadUpdates(ctx, resChan)
 }
 
-func (s *BlocksService) GetHead() *types.TipSet {
-	return s.api.GetHead()
-}
-
-func (s *BlocksService) GetGenesis() *types.TipSet {
-	return s.api.GetGenesis()
-}
-
-func (s *BlocksService) GetByHeight(height abi.ChainEpoch) (*types.TipSet, bool) {
-	return s.api.GetByHeight(height)
-}
-
 func (s *BlocksService) GetMaxHeightFromDB() (int, error) {
-	 return s.pgDs.GetMaxHeight()
+	return s.pgDs.GetMaxHeight()
 }
 
 func (s *BlocksService) PushBlocks(blocks []*types.BlockHeader) {
@@ -59,11 +46,11 @@ func (s *BlocksService) PushBlocksToRevert(blocks []*types.BlockHeader) {
 func (s *BlocksService) push(topic string, blocks []*types.BlockHeader) {
 	defer func() {
 		if r := recover(); r != nil {
-			log.Println("[MessagesService][Recover]", "Cid throw panic")
+			log.Println("[BlocksService][Recover]", "Throw panic", r)
 		}
 	}()
 
-	if len(blocks) == 0 {
+	if blocks == nil {
 		return
 	}
 
