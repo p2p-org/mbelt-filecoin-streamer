@@ -58,10 +58,13 @@ CREATE TABLE IF NOT EXISTS filecoin.blocks_to_revert
 
 -- Temp tbls
 
+
+-- Fix for unquoting varchar json
 CREATE OR REPLACE FUNCTION varchar_to_jsonb(varchar) RETURNS jsonb AS
 $$
 SELECT to_jsonb($1)
 $$ LANGUAGE SQL;
+
 CREATE CAST (varchar as jsonb) WITH FUNCTION varchar_to_jsonb(varchar) AS IMPLICIT;
 
 CREATE TABLE IF NOT EXISTS filecoin._blocks
@@ -124,14 +127,14 @@ BEGIN
                                 "block_time")
     VALUES (NEW."cid",
             NEW."height",
-            varchar_to_jsonb(NEW."parents"),
+            NEW."parents"::jsonb,
             NEW."win_count",
             NEW."miner",
             NEW."messages_cid",
             NEW."validated",
-            varchar_to_jsonb(NEW."blocksig"),
-            varchar_to_jsonb(NEW."bls_aggregate"),
-            varchar_to_jsonb(NEW."block"),
+            NEW."blocksig"::jsonb,
+            NEW."bls_aggregate"::jsonb,
+            NEW."block"::jsonb,
             to_timestamp(NEW."block_time"))
     ON CONFLICT DO NOTHING;
 
@@ -226,9 +229,9 @@ BEGIN
             NEW."from",
             NEW."to",
             NEW."value",
-            varchar_to_jsonb(NEW."gas"),
+            NEW."gas"::jsonb,
             NEW."params",
-            varchar_to_jsonb(NEW."data"),
+            NEW."data"::jsonb,
             to_timestamp(NEW."block_time"))
     ON CONFLICT DO NOTHING;
 
