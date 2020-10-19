@@ -40,25 +40,6 @@ CREATE TABLE IF NOT EXISTS filecoin.tipsets
     "min_timestamp" TIMESTAMP
 );
 
--- Internal tables
-CREATE TABLE IF NOT EXISTS filecoin.blocks_to_revert
-(
-    "cid"           VARCHAR(256) NOT NULL PRIMARY KEY,
-    "height"        BIGINT,
-    "parents"       TEXT,
-    "win_count"     INT,
-    "miner"         VARCHAR(128),
-    "messages_cid"  VARCHAR(256),
-    "validated"     BOOLEAN,
-    "blocksig"      TEXT,
-    "bls_aggregate" TEXT,
-    "block"         TEXT,
-    "block_time"    BIGINT
-);
-
--- Temp tbls
-
-
 -- Fix for unquoting varchar json
 CREATE OR REPLACE FUNCTION varchar_to_jsonb(varchar) RETURNS jsonb AS
 $$
@@ -66,6 +47,8 @@ SELECT to_jsonb($1)
 $$ LANGUAGE SQL;
 
 CREATE CAST (varchar as jsonb) WITH FUNCTION varchar_to_jsonb(varchar) AS IMPLICIT;
+
+-- Internal tables
 
 CREATE TABLE IF NOT EXISTS filecoin._blocks
 (
@@ -105,6 +88,16 @@ CREATE TABLE IF NOT EXISTS filecoin._tipsets
     "parent_state"  VARCHAR,
     "blocks"        TEXT,
     "min_timestamp" BIGINT
+);
+
+CREATE TABLE IF NOT EXISTS filecoin._tipsets_to_revert
+(
+    "height"        BIGINT NOT NULL PRIMARY KEY,
+    "parents"       VARCHAR(256)[],
+    "parent_weight" BIGINT,
+    "parent_state"  VARCHAR,
+    "blocks"        VARCHAR(256)[],
+    "min_timestamp" TIMESTAMP
 );
 
 
@@ -170,42 +163,41 @@ CREATE TRIGGER trg_blocks_sink_trim_after_upsert
     FOR EACH ROW
 EXECUTE PROCEDURE filecoin.sink_trim_blocks_after_insert();
 
--- Blocks to revert
+-- Tipsets to revert
 
-CREATE OR REPLACE FUNCTION filecoin.sink_revert_blocks()
+CREATE OR REPLACE FUNCTION filecoin.sink_revert_tipsets()
     RETURNS trigger AS
 $$
 BEGIN
-    DELETE FROM filecoin.blocks WHERE "cid" = NEW."cid";
-    DELETE FROM filecoin.messages WHERE "block_cid" = NEW."cid";
+    DELETE FROM filecoin.tipsets WHERE tipsets."height" = NEW."height";
     RETURN NEW;
 END ;
 
 $$
     LANGUAGE 'plpgsql';
 
-CREATE TRIGGER trg_blocks_sink_revert
+CREATE TRIGGER trg_tipsets_sink_revert
     BEFORE INSERT
-    ON filecoin.blocks_to_revert
+    ON filecoin._tipsets_to_revert
     FOR EACH ROW
-EXECUTE PROCEDURE filecoin.sink_revert_blocks();
+EXECUTE PROCEDURE filecoin.sink_revert_tipsets();
 
-CREATE OR REPLACE FUNCTION filecoin.sink_trim_blocks_to_revert_after_insert()
+CREATE OR REPLACE FUNCTION filecoin.sink_trim_tipsets_to_revert_after_insert()
     RETURNS trigger AS
 $$
 BEGIN
-    DELETE FROM filecoin.blocks_to_revert WHERE "cid" = NEW."cid";
+    DELETE FROM filecoin._tipsets_to_revert WHERE "height" = NEW."height";
     RETURN NEW;
 END ;
 
 $$
     LANGUAGE 'plpgsql';
 
-CREATE TRIGGER trg_blocks_to_revert_sink_trim_after_upsert
+CREATE TRIGGER trg_tipsets_to_revert_sink_trim_after_upsert
     AFTER INSERT
-    ON filecoin.blocks_to_revert
+    ON filecoin._tipsets_to_revert
     FOR EACH ROW
-EXECUTE PROCEDURE filecoin.sink_trim_blocks_to_revert_after_insert();
+EXECUTE PROCEDURE filecoin.sink_trim_tipsets_to_revert_after_insert();
 
 -- Messages
 

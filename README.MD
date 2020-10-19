@@ -3,17 +3,55 @@
 * Docker Compose
 * Docker memory is allocated minimally at 8 GB
 
-## How to start
+## Before start 
 ```shell script
 ./start-docker.sh
 ```
 
 ## What does the script do?
-The script will start all necessary KSQLDB, Kafka, ZooKeeper, PostgreSQL containers, create all demo streams and connectors for DB (It'll take about 5 minutes).
+The script will start all necessary infrastructure: KSQLDB, Kafka, ZooKeeper, PostgreSQL containers, create all demo streams and connectors for DB (It'll take about 5 minutes).
 
-Also, it'll start:
-* **FilecoinBlockStreamer** - golang service that streams Filecoin blocks the node and sends it to a Kafka topic;
-* **FilecoinBlocksEnrichment** - golang service that listens for fresh blocks in Kafka topic and for each one queries and puts corresponding messages and deals in corresponding Kafka topics
+## How to configure and start streamer
+You can start mbelt-filecoin-streamer via docker-compose or via go build/run/install.
+
+To start via docker compose, you need to modify env variables in docker-compose.yml and execution flags in Dockerfile (if needed) and then just run
+```shell script
+docker-compose up filecoin-streamer-worker
+```
+
+Or set necessary environment variables (see table below), go build or go install main.go in root of this repository and run it with or without execution flags (flags table below as well)   
+
+Examples:
+```shell script
+go install github.com/p2p-org/mbelt-filecoin-streamer
+mbelt-filecoin-streamer --sync-force --sub-head-updates=false
+```
+or
+
+```shell script
+go build -o mbelt-filecoin-streamer github.com/p2p-org/mbelt-filecoin-streamer
+mbelt-filecoin-streamer --sync-from=1000
+```
+
+#### Environment variables
+
+| Variable | Description | Example |
+| ---- | ---- | ---- |
+| `MBELT_FILECOIN_STREAMER_API_URL` | URL to filecoin node http API | `http://127.0.0.1:1234/rpc/v0` |
+| `MBELT_FILECOIN_STREAMER_API_WS_URL` | URL to filecoin node websocket API | `ws://127.0.0.1:1234/rpc/v0` |
+| `MBELT_FILECOIN_STREAMER_API_TOKEN` | Token for filecoin node API | |
+| `MBELT_FILECOIN_STREAMER_KAFKA` | URL to Kafka | `http://127.0.0.1:9092` |
+| `MBELT_FILECOIN_STREAMER_PG_URL` | URL to PostgreSQL DB with credentials needed to connect | `postgres://127.0.0.1:5432/raw?user=sink&password=123S&sslmode=disable` |
+
+#### Execution flags
+
+| Flag | Description | Default |
+| ---- | ---- | ---- |
+| `-s`, `--sync` | Turn on sync starting from last block in DB | `true` |
+| `-f`, `--sync-force` | Turn on sync starting from genesis block | `false` |
+| `-u`, `--sub-head-updates` | Turn on subscription on head updates | `true` |
+| `-F`, `--sync-from` | Height to start sync from. Dont provide or provide negative number to sync from max height in DB | -1 |
+| `-o`, `--sync-from-db-offset` | Specify offset from max height in DB to start sync from (maxHeightInDb - offset) | 100 |
 
 ## What is happening inside ksqlDB?
 Data flow:

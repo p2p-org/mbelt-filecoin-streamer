@@ -35,15 +35,7 @@ func (s *BlocksService) GetMaxHeightFromDB() (int, error) {
 	return s.pgDs.GetMaxHeight()
 }
 
-func (s *BlocksService) PushBlocks(blocks []*types.BlockHeader) {
-	s.push(datastore.TopicBlocks, blocks)
-}
-
-func (s *BlocksService) PushBlocksToRevert(blocks []*types.BlockHeader) {
-	s.push(datastore.TopicBlocksToRevert, blocks)
-}
-
-func (s *BlocksService) push(topic string, blocks []*types.BlockHeader) {
+func (s *BlocksService) Push(blocks []*types.BlockHeader) {
 	defer func() {
 		if r := recover(); r != nil {
 			log.Println("[BlocksService][Recover]", "Throw panic", r)
@@ -60,7 +52,7 @@ func (s *BlocksService) push(topic string, blocks []*types.BlockHeader) {
 		m[block.Cid().String()] = serializeHeader(block)
 	}
 
-	s.kafkaDs.Push(topic, m)
+	s.kafkaDs.Push(datastore.TopicBlocks, m)
 }
 
 func serializeHeader(header *types.BlockHeader) map[string]interface{} {

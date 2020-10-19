@@ -36,7 +36,15 @@ func (s *TipSetsService) GetByHeight(height abi.ChainEpoch) (*types.TipSet, bool
 	return s.api.GetByHeight(height)
 }
 
+func (s *TipSetsService) PushTipSetsToRevert(blocks *types.TipSet) {
+	s.push(datastore.TopicTipsetsToRevert, blocks)
+}
+
 func (s *TipSetsService) Push(tipset *types.TipSet) {
+	s.push(datastore.TopicTipSets, tipset)
+}
+
+func (s *TipSetsService) push(topic string, tipset *types.TipSet) {
 	defer func() {
 		if r := recover(); r != nil {
 			log.Println("[MessagesService][Recover]", "Throw panic", r)
@@ -47,7 +55,7 @@ func (s *TipSetsService) Push(tipset *types.TipSet) {
 		tipset.Height().String(): serializeTipSet(tipset),
 	}
 
-	s.ds.Push(datastore.TopicTipSets, m)
+	s.ds.Push(topic, m)
 }
 
 func serializeTipSet(tipset *types.TipSet) map[string]interface{} {

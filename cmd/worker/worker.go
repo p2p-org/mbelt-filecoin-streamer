@@ -1,8 +1,7 @@
-package main
+package worker
 
 import (
 	"context"
-	"flag"
 	"github.com/filecoin-project/lotus/api"
 	"github.com/filecoin-project/lotus/chain/types"
 	"github.com/filecoin-project/specs-actors/actors/abi"
@@ -26,38 +25,16 @@ const (
 	HeadEventRevert  = "revert"
 )
 
-var conf *config.Config
+func Start(conf *config.Config, sync bool, syncForce bool, updHead bool, syncFrom int, syncFromDbOffset int) {
+	exitCode := 0
+	defer os.Exit(exitCode)
 
-func init() {
-	conf = &config.Config{
-		APIUrl:     os.Getenv("MBELT_FILECOIN_STREAMER_API_URL"),
-		APIWsUrl:   os.Getenv("MBELT_FILECOIN_STREAMER_API_WS_URL"),
-		APIToken:   os.Getenv("MBELT_FILECOIN_STREAMER_API_TOKEN"),
-		KafkaHosts: os.Getenv("MBELT_FILECOIN_STREAMER_KAFKA"), // "localhost:9092",
-		PgUrl:      os.Getenv("MBELT_FILECOIN_STREAMER_PG_URL"),
-	}
-
-	banner := "\nMBELT_FILECOIN_STREAMER_API_URL = " + conf.APIUrl + "\n" +
-		"MBELT_FILECOIN_STREAMER_API_WS_URL = " + conf.APIWsUrl + "\n" +
-		"MBELT_FILECOIN_STREAMER_API_TOKEN = " + conf.APIToken + "\n" +
-		"MBELT_FILECOIN_STREAMER_KAFKA = " + conf.KafkaHosts + "\n" +
-		"MBELT_FILECOIN_STREAMER_PG_URL = " + conf.PgUrl + "\n"
-
-	log.Println(banner)
-}
-
-func main() {
 	err := services.InitServices(conf)
 	if err != nil {
 		log.Println("[App][Debug]", "Cannot init services:", err)
+		exitCode = 1
 		return
 	}
-
-	sync := flag.Bool("sync", true, "Turn on sync starting from last block in DB")
-	syncForce := flag.Bool("sync-force", false, "Turn on sync starting from genesis block")
-	updHead := flag.Bool("sub-head-updates", true, "Turn on subscription on head updates")
-	syncFrom := flag.Int("sync-from", -1, "Height to start sync from. Dont provide or provide negative number to sync from max height in DB")
-	syncFromDbOffset := flag.Int("sync-from-db-offset", 100, "Specify offset from max height in DB to start sync from (maxHeightInDb - offset)")
 
 	syncCtx, syncCancel := context.WithCancel(context.Background())
 	updCtx, updCancel := context.WithCancel(context.Background())
@@ -75,33 +52,31 @@ func main() {
 		updCancel()
 	}()
 
-	if syncForce != nil && *syncForce {
+	if syncForce {
 		syncToHead(0, syncCtx)
 	}
 
-	if sync != nil && *sync {
-		if syncFrom != nil && *syncFrom >= 0 {
-			syncToHead(*syncFrom, syncCtx)
+	if sync {
+		if syncFrom >= 0 {
+			syncToHead(syncFrom, syncCtx)
 		} else {
 			heightFromDb, err := services.App().BlocksService().GetMaxHeightFromDB()
 			if err != nil {
 				log.Println("Can't get max height from postgres DB, stopping...")
 				log.Println(err)
+				exitCode = 1
 				return
 			}
 
-			if syncFromDbOffset != nil && heightFromDb < *syncFromDbOffset {
+			if heightFromDb < syncFromDbOffset {
 				syncToHead(0, syncCtx)
-			} else if syncFromDbOffset != nil {
-				syncToHead(heightFromDb-*syncFromDbOffset, syncCtx)
 			} else {
-				log.Println("sync-from-db-offset is nil, syncing from max height in DB with no offset")
-				syncToHead(heightFromDb, syncCtx)
+				syncToHead(heightFromDb-syncFromDbOffset, syncCtx)
 			}
 		}
 	}
 
-	if updHead != nil && *updHead {
+	if updHead {
 		updateHeads(updCtx)
 	}
 
@@ -134,18 +109,18 @@ func updateHeads(ctx context.Context) {
 					}
 					// Pushing block and its messages to kafka just in case.
 					// TODO: Duplicates should be handled on db's side
-					pushBlocksAndTheirMessages(hu.Val.Blocks())
+					pushTipsetWithBlocksAndMessages(hu.Val)
 
 				case HeadEventRevert:
-					services.App().BlocksService().PushBlocksToRevert(hu.Val.Blocks())
+					services.App().TipSetsService().PushTipSetsToRevert(hu.Val)
 
 				case HeadEventApply:
-					pushBlocksAndTheirMessages(hu.Val.Blocks())
+					pushTipsetWithBlocksAndMessages(hu.Val)
 
 				default:
 					log.Println("[App][Debug][updateHeads]", "yet unknown event encountered:", hu.Type)
 					// Pushing just in case
-					pushBlocksAndTheirMessages(hu.Val.Blocks())
+					pushTipsetWithBlocksAndMessages(hu.Val)
 				}
 			}
 		case <-ctx.Done():
@@ -186,7 +161,7 @@ func syncTo(from int, to int, ctx context.Context) {
 					defer wg.Done()
 					_, tipSet, blocks, msgs := syncForHeight(height)
 					services.App().TipSetsService().Push(tipSet)
-					services.App().BlocksService().PushBlocks(blocks)
+					services.App().BlocksService().Push(blocks)
 					services.App().MessagesService().Push(msgs)
 
 				}(height)
@@ -243,8 +218,9 @@ func getBlockMessages(blocks []*types.BlockHeader) (msgs []*messages.MessageExte
 	return msgs
 }
 
-func pushBlocksAndTheirMessages(blocks []*types.BlockHeader) {
-	msgs := getBlockMessages(blocks)
-	services.App().BlocksService().PushBlocks(blocks)
+func pushTipsetWithBlocksAndMessages(tipset *types.TipSet) {
+	services.App().TipSetsService().Push(tipset)
+	msgs := getBlockMessages(tipset.Blocks())
+	services.App().BlocksService().Push(tipset.Blocks())
 	services.App().MessagesService().Push(msgs)
 }
