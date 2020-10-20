@@ -149,6 +149,15 @@ func syncTo(from int, to int, ctx context.Context) {
 
 	defer log.Println("[App][Debug][sync]", "finished sync")
 	startHeight := abi.ChainEpoch(from)
+	if startHeight <= 1 {
+		log.Println("getting genesis")
+		genesis := services.App().TipSetsService().GetGenesis()
+		log.Println(genesis.MarshalJSON())
+		services.App().TipSetsService().Push(genesis)
+		services.App().BlocksService().Push(genesis.Blocks())
+		services.App().MessagesService().Push(getBlockMessages(genesis.Blocks()))
+	}
+
 	for height := startHeight; height < syncHeight; {
 		select {
 		default:
