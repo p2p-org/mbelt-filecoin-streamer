@@ -9,11 +9,11 @@ import (
 
 type ProcessorService struct {
 	config *config.Config
-	ds     *datastore.Datastore
+	ds     *datastore.KafkaDatastore
 	api    *client.APIClient
 }
 
-func Init(config *config.Config, ds *datastore.Datastore, apiClient *client.APIClient) (*ProcessorService, error) {
+func Init(config *config.Config, ds *datastore.KafkaDatastore, apiClient *client.APIClient) (*ProcessorService, error) {
 
 	return &ProcessorService{
 		config: config,

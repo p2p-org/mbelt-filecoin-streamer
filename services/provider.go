@@ -4,9 +4,11 @@ import (
 	"github.com/p2p-org/mbelt-filecoin-streamer/client"
 	"github.com/p2p-org/mbelt-filecoin-streamer/config"
 	"github.com/p2p-org/mbelt-filecoin-streamer/datastore"
+	"github.com/p2p-org/mbelt-filecoin-streamer/datastore/pg"
 	"github.com/p2p-org/mbelt-filecoin-streamer/services/blocks"
 	"github.com/p2p-org/mbelt-filecoin-streamer/services/messages"
 	"github.com/p2p-org/mbelt-filecoin-streamer/services/processor"
+	"github.com/p2p-org/mbelt-filecoin-streamer/services/tipsets"
 )
 
 var (
@@ -16,25 +18,32 @@ var (
 type ServiceProvider struct {
 	blocksService    *blocks.BlocksService
 	messagesService  *messages.MessagesService
+	tipsetsService   *tipsets.TipSetsService
 	processorService *processor.ProcessorService
 }
 
-func (p *ServiceProvider) Init(config *config.Config, ds *datastore.Datastore, apiClient *client.APIClient) error {
+func (p *ServiceProvider) Init(config *config.Config, kafkaDs *datastore.KafkaDatastore, pgDs *pg.PgDatastore, apiClient *client.APIClient) error {
 	var err error
 
-	p.blocksService, err = blocks.Init(config, ds, apiClient)
+	p.blocksService, err = blocks.Init(config, kafkaDs, pgDs, apiClient)
 
 	if err != nil {
 		return err
 	}
 
-	p.messagesService, err = messages.Init(config, ds, apiClient)
+	p.messagesService, err = messages.Init(config, kafkaDs, apiClient)
 
 	if err != nil {
 		return err
 	}
 
-	p.processorService, err = processor.Init(config, ds, apiClient)
+	p.tipsetsService, err = tipsets.Init(config, kafkaDs, apiClient)
+
+	if err != nil {
+		return err
+	}
+
+	p.processorService, err = processor.Init(config, kafkaDs, apiClient)
 
 	if err != nil {
 		return err
@@ -49,6 +58,10 @@ func (p *ServiceProvider) BlocksService() *blocks.BlocksService {
 
 func (p *ServiceProvider) MessagesService() *messages.MessagesService {
 	return p.messagesService
+}
+
+func (p *ServiceProvider) TipSetsService() *tipsets.TipSetsService {
+	return p.tipsetsService
 }
 
 func (p *ServiceProvider) ProcessorService() *processor.ProcessorService {

@@ -2,6 +2,7 @@ package client
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -21,8 +22,9 @@ const (
 )
 
 type APIClient struct {
-	url string
-	jwt string
+	url   string
+	wsUrl string
+	jwt   string
 }
 
 type APIErr struct {
@@ -43,10 +45,11 @@ type APIResponse struct {
 	Error   *APIErr `json:"error"`
 }
 
-func Init(url, jwt string) (*APIClient, error) {
+func Init(url, wsUrl, jwt string) (*APIClient, error) {
 	c := &APIClient{
-		url: url,
-		jwt: jwt,
+		url:   url,
+		wsUrl: wsUrl,
+		jwt:   jwt,
 	}
 
 	testGenesis := c.GetGenesis()
@@ -136,6 +139,39 @@ func (c *APIClient) GetHead() *types.TipSet {
 	return resp.Result
 }
 
+func (c *APIClient) GetHeadUpdates(ctx context.Context, resChan *chan []*api.HeadChange) {
+	jrpcClient, err := NewClient(c.wsUrl)
+	if err != nil {
+		log.Println("[API][Error][GetHeadUpdates]", err)
+		return
+	}
+
+	cons := make(chan []byte, 100)
+	subCtx, subCancel := context.WithCancel(ctx)
+	_, err = jrpcClient.Subscribe(ChainNotify, nil, &cons, subCtx)
+	if err != nil {
+		log.Println("[API][Error][GetHeadUpdates]", err)
+		return
+	}
+
+	for {
+		select {
+		case val := <-cons:
+			upd := &HeadUpdates{}
+			err := json.Unmarshal(val, upd)
+			if err != nil {
+				log.Println("[API][Error][GetHeadUpdates]", "An error occurred while trying to unmarshal head update", err)
+			}
+
+			*resChan <- upd.Params.HeadChanges
+
+		case <-ctx.Done():
+			subCancel()
+			return
+		}
+	}
+}
+
 func (c *APIClient) GetBlock(cid cid.Cid) *types.BlockHeader {
 	resp := &Block{}
 	err := c.do(ChainGetBlock, []interface{}{cid}, resp)
@@ -178,7 +214,7 @@ func (c *APIClient) GetBlockMessages(cid cid.Cid) *api.BlockMessages {
 	}
 
 	if resp.Error != nil {
-		// log.Println("[API][Error][GetBlockMessages]", resp.Error.Message)
+		log.Println("[API][Error][GetBlockMessages]", resp.Error.Message)
 		return nil
 	}
 	return resp.Result

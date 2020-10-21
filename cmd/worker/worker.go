@@ -1,92 +1,194 @@
-package main
+package worker
 
 import (
+	"context"
+	"github.com/filecoin-project/lotus/api"
 	"github.com/filecoin-project/lotus/chain/types"
 	"github.com/filecoin-project/specs-actors/actors/abi"
 	"github.com/p2p-org/mbelt-filecoin-streamer/config"
 	"github.com/p2p-org/mbelt-filecoin-streamer/services"
+	"github.com/p2p-org/mbelt-filecoin-streamer/services/messages"
 	"log"
 	"os"
-	"strconv"
+	"os/signal"
 	"sync"
+	"syscall"
 )
 
 const (
 	defaultHeight = 5000
 	batchCapacity = 20
+
+	// current event is current head. We receive it once right after subscription on head updates
+	HeadEventCurrent = "current"
+	HeadEventApply   = "apply"
+	HeadEventRevert  = "revert"
 )
 
-var conf *config.Config
+func Start(conf *config.Config, sync bool, syncForce bool, updHead bool, syncFrom int, syncFromDbOffset int) {
+	exitCode := 0
+	defer os.Exit(exitCode)
 
-func init() {
-	conf = &config.Config{
-		APIUrl:     os.Getenv("MBELT_FILECOIN_STREAMER_API_URL"),
-		APIToken:   os.Getenv("MBELT_FILECOIN_STREAMER_API_TOKEN"),
-		KafkaHosts: os.Getenv("MBELT_FILECOIN_STREAMER_KAFKA"), // "localhost:9092",
-	}
-
-	banner := "\nMBELT_FILECOIN_STREAMER_API_URL = " + conf.APIUrl + "\n" +
-		"MBELT_FILECOIN_STREAMER_API_TOKEN = " + conf.APIToken + "\n" +
-		"MBELT_FILECOIN_STREAMER_KAFKA = " + conf.KafkaHosts + "\n" +
-		"MBELT_FILECOIN_STREAMER_MIN_HEIGHT = " + os.Getenv("MBELT_FILECOIN_STREAMER_MIN_HEIGHT") + "\n"
-
-	log.Println(banner)
-}
-
-func main() {
-	var syncHeight abi.ChainEpoch
 	err := services.InitServices(conf)
-
 	if err != nil {
 		log.Println("[App][Debug]", "Cannot init services:", err)
+		exitCode = 1
 		return
 	}
 
-	head := services.App().BlocksService().GetHead()
+	syncCtx, syncCancel := context.WithCancel(context.Background())
+	updCtx, updCancel := context.WithCancel(context.Background())
 
-	if head != nil {
-		log.Println("[App][Debug]", "Cannot got head with height:", head.Height())
-		syncHeight = head.Height()
-	} else {
-		log.Println("[App][Debug]", "Cannot get header, use default syncHeight:", defaultHeight)
-		syncHeight = defaultHeight
+	go func() {
+		var gracefulStop = make(chan os.Signal)
+		signal.Notify(gracefulStop, syscall.SIGTERM)
+		signal.Notify(gracefulStop, syscall.SIGINT)
+		signal.Notify(gracefulStop, syscall.SIGHUP)
+
+		sig := <-gracefulStop
+		log.Printf("Caught sig: %+v", sig)
+		log.Println("Wait for graceful shutdown to finish.")
+		syncCancel()
+		updCancel()
+	}()
+
+	if syncForce {
+		syncToHead(0, syncCtx)
 	}
 
-	startHeight := abi.ChainEpoch(0)
+	if sync {
+		if syncFrom >= 0 {
+			syncToHead(syncFrom, syncCtx)
+		} else {
+			heightFromDb, err := services.App().BlocksService().GetMaxHeightFromDB()
+			if err != nil {
+				log.Println("Can't get max height from postgres DB, stopping...")
+				log.Println(err)
+				exitCode = 1
+				return
+			}
 
-	// Temp
-	strHeight := os.Getenv("MBELT_FILECOIN_STREAMER_MIN_HEIGHT")
-	if strHeight != "" {
-		strHeightVal, _ := strconv.ParseInt(strHeight, 10, 64)
-		startHeight = abi.ChainEpoch(strHeightVal)
-	}
-
-	for height := startHeight; height < syncHeight; {
-
-		wg := sync.WaitGroup{}
-		wg.Add(batchCapacity)
-
-		for workers := 0; workers < batchCapacity; workers++ {
-
-			go func(height abi.ChainEpoch) {
-				defer wg.Done()
-				_, blocks, messages := syncBlocks(height)
-				services.App().BlocksService().Push(blocks)
-				services.App().MessagesService().Push(messages)
-
-			}(height)
-
-			height++
+			if heightFromDb < syncFromDbOffset {
+				syncToHead(0, syncCtx)
+			} else {
+				syncToHead(heightFromDb-syncFromDbOffset, syncCtx)
+			}
 		}
+	}
 
-		wg.Wait()
+	if updHead {
+		updateHeads(updCtx)
+	}
+
+	log.Println("mbelt-filecoin-streamer gracefully stopped")
+}
+
+func updateHeads(ctx context.Context) {
+	headUpdatesCtx, cancelHeadUpdates := context.WithCancel(ctx)
+	// Buffer is that big for channel to be able to store some head updates while we are syncing till "current" block
+	// TODO: This approach is not solid. Think how we can do it better.
+	headUpdates := make(chan []*api.HeadChange, 1000)
+	services.App().BlocksService().GetHeadUpdates(headUpdatesCtx, &headUpdates)
+
+	for {
+		select {
+		case update := <-headUpdates:
+			for _, hu := range update {
+				switch hu.Type {
+
+				case HeadEventCurrent:
+					currentHeight := int(hu.Val.Height())
+					maxHeightInDb, err := services.App().BlocksService().GetMaxHeightFromDB()
+					if err != nil {
+						log.Println("[App][Error][updateHeads]", "couldn't get max height from DB. Error:", err)
+						cancelHeadUpdates()
+						return
+					}
+					if currentHeight > maxHeightInDb {
+						syncTo(maxHeightInDb, currentHeight, ctx)
+					}
+					// Pushing block and its messages to kafka just in case.
+					// TODO: Duplicates should be handled on db's side
+					pushTipsetWithBlocksAndMessages(hu.Val)
+
+				case HeadEventRevert:
+					services.App().TipSetsService().PushTipSetsToRevert(hu.Val)
+
+				case HeadEventApply:
+					pushTipsetWithBlocksAndMessages(hu.Val)
+
+				default:
+					log.Println("[App][Debug][updateHeads]", "yet unknown event encountered:", hu.Type)
+					// Pushing just in case
+					pushTipsetWithBlocksAndMessages(hu.Val)
+				}
+			}
+		case <-ctx.Done():
+			cancelHeadUpdates()
+			log.Println("[App][Debug][updateHeads]", "unsubscribed from head updates")
+			return
+		}
 	}
 }
 
-func syncBlocks(height abi.ChainEpoch) (isHeightNotReached bool, blocks []*types.BlockHeader, messages []*types.Message) {
+func syncToHead(from int, ctx context.Context) {
+	head := services.App().TipSetsService().GetHead()
+	if head != nil {
+		syncTo(from, int(head.Height()), ctx)
+	} else {
+		syncTo(from, 0, ctx)
+	}
+}
+
+func syncTo(from int, to int, ctx context.Context) {
+	syncHeight := abi.ChainEpoch(to)
+	if to <= from {
+		log.Println("[App][Debug][sync]", "Specified sync height is too small, syncing to default height:", defaultHeight)
+		syncHeight = defaultHeight
+	}
+
+	defer log.Println("[App][Debug][sync]", "finished sync")
+	startHeight := abi.ChainEpoch(from)
+	if startHeight <= 1 {
+		log.Println("getting genesis")
+		genesis := services.App().TipSetsService().GetGenesis()
+		log.Println(genesis.MarshalJSON())
+		services.App().TipSetsService().Push(genesis)
+		services.App().BlocksService().Push(genesis.Blocks())
+		services.App().MessagesService().Push(getBlockMessages(genesis.Blocks()))
+	}
+
+	for height := startHeight; height < syncHeight; {
+		select {
+		default:
+			wg := sync.WaitGroup{}
+			wg.Add(batchCapacity)
+
+			for workers := 0; workers < batchCapacity; workers++ {
+
+				go func(height abi.ChainEpoch) {
+					defer wg.Done()
+					_, tipSet, blocks, msgs := syncForHeight(height)
+					services.App().TipSetsService().Push(tipSet)
+					services.App().BlocksService().Push(blocks)
+					services.App().MessagesService().Push(msgs)
+
+				}(height)
+
+				height++
+			}
+
+			wg.Wait()
+		case <-ctx.Done():
+			return
+		}
+	}
+}
+
+func syncForHeight(height abi.ChainEpoch) (isHeightNotReached bool, tipSet *types.TipSet, blocks []*types.BlockHeader, extMessages []*messages.MessageExtended) {
 	log.Println("[Datastore][Debug]", "Load height:", height)
 
-	tipSet, isHeightNotReached := services.App().BlocksService().GetByHeight(height)
+	tipSet, isHeightNotReached = services.App().TipSetsService().GetByHeight(height)
 
 	if !isHeightNotReached {
 		log.Println("[App][Debug]", "Height reached")
@@ -99,27 +201,35 @@ func syncBlocks(height abi.ChainEpoch) (isHeightNotReached bool, blocks []*types
 	}
 
 	blocks = tipSet.Blocks()
+	extMessages = getBlockMessages(blocks)
 
-	for _, block := range tipSet.Blocks() {
-		if block.Messages.Defined() {
-			blockMessages := services.App().MessagesService().GetBlockMessages(block.Messages)
-
-			if blockMessages == nil {
-				continue
-			}
-
-			if len(blockMessages.Cids) > 0 {
-				for _, messageCid := range blockMessages.Cids {
-					message := services.App().MessagesService().GetMessage(messageCid)
-
-					if message == nil {
-						continue
-					}
-
-					messages = append(messages, message)
-				}
-			}
-		}
-	}
 	return
+}
+
+func getBlockMessages(blocks []*types.BlockHeader) (msgs []*messages.MessageExtended) {
+	for _, block := range blocks {
+		blockMessages := services.App().MessagesService().GetBlockMessages(block.Cid())
+
+		if blockMessages == nil || len(blockMessages.BlsMessages) == 0 {
+			continue
+		}
+
+		for _, blsMessage := range blockMessages.BlsMessages {
+			msgs = append(msgs, &messages.MessageExtended{
+				BlockCid:  block.Cid(),
+				Message:   blsMessage,
+				Timestamp: block.Timestamp,
+			})
+		}
+
+	}
+
+	return msgs
+}
+
+func pushTipsetWithBlocksAndMessages(tipset *types.TipSet) {
+	services.App().TipSetsService().Push(tipset)
+	msgs := getBlockMessages(tipset.Blocks())
+	services.App().BlocksService().Push(tipset.Blocks())
+	services.App().MessagesService().Push(msgs)
 }

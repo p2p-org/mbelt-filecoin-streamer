@@ -1,7 +1,7 @@
 version: '3'
 services:
   zookeeper:
-    image: confluentinc/cp-zookeeper:5.5.1
+    image: confluentinc/cp-zookeeper:5.5.2
     hostname: zookeeper
     container_name: zookeeper
     ports:
@@ -11,7 +11,7 @@ services:
       ZOOKEEPER_TICK_TIME: 2000
 
   broker:
-    image: confluentinc/cp-server:5.5.1
+    image: confluentinc/cp-server:5.5.2
     hostname: broker
     container_name: broker
     depends_on:
@@ -38,7 +38,7 @@ services:
       CONFLUENT_SUPPORT_CUSTOMER_ID: 'anonymous'
 
   schema-registry:
-    image: confluentinc/cp-schema-registry:5.5.1
+    image: confluentinc/cp-schema-registry:5.5.2
     hostname: schema-registry
     container_name: schema-registry
     depends_on:
@@ -79,14 +79,14 @@ services:
       CONNECT_INTERNAL_VALUE_CONVERTER: "org.apache.kafka.connect.json.JsonConverter"
       CONNECT_ZOOKEEPER_CONNECT: 'zookeeper:2181'
       # CLASSPATH required due to CC-2422
-      CLASSPATH: /usr/share/java/monitoring-interceptors/monitoring-interceptors-5.5.1.jar
+      CLASSPATH: /usr/share/java/monitoring-interceptors/monitoring-interceptors-5.5.2.jar
       CONNECT_PRODUCER_INTERCEPTOR_CLASSES: "io.confluent.monitoring.clients.interceptor.MonitoringProducerInterceptor"
       CONNECT_CONSUMER_INTERCEPTOR_CLASSES: "io.confluent.monitoring.clients.interceptor.MonitoringConsumerInterceptor"
       CONNECT_PLUGIN_PATH: "/usr/share/java,/usr/share/confluent-hub-components"
       CONNECT_LOG4J_LOGGERS: org.apache.zookeeper=ERROR,org.I0Itec.zkclient=ERROR,org.reflections=ERROR
 
   control-center:
-    image: confluentinc/cp-enterprise-control-center:5.5.1
+    image: confluentinc/cp-enterprise-control-center:5.5.2
     hostname: control-center
     container_name: control-center
     depends_on:
@@ -111,7 +111,7 @@ services:
       PORT: 9021
 
   ksqldb-server:
-    image: confluentinc/cp-ksqldb-server:5.5.1
+    image: confluentinc/cp-ksqldb-server:5.5.2
     hostname: ksqldb-server
     container_name: ksqldb-server
     depends_on:
@@ -131,7 +131,7 @@ services:
       KSQL_KSQL_CONNECT_URL: "http://connect:8083"
 
   ksqldb-cli:
-    image: confluentinc/cp-ksqldb-cli:5.5.1
+    image: confluentinc/cp-ksqldb-cli:5.5.2
     container_name: ksqldb-cli
     depends_on:
       - broker
@@ -141,7 +141,7 @@ services:
     tty: true
 
   ksql-datagen:
-    image: confluentinc/ksqldb-examples:5.5.1
+    image: confluentinc/ksqldb-examples:5.5.2
     hostname: ksql-datagen
     container_name: ksql-datagen
     depends_on:
@@ -163,7 +163,7 @@ services:
       STREAMS_SCHEMA_REGISTRY_PORT: 8081
 
   rest-proxy:
-    image: confluentinc/cp-kafka-rest:5.5.1
+    image: confluentinc/cp-kafka-rest:5.5.2
     depends_on:
       - zookeeper
       - broker
@@ -179,7 +179,9 @@ services:
       KAFKA_REST_SCHEMA_REGISTRY_URL: 'http://schema-registry:8081'
 
   db:
-    image: postgres
+    build:
+      context: .
+      dockerfile: Dockerfile.db
     restart: always
     hostname: postgres
     ports:
@@ -191,12 +193,14 @@ services:
       - connect
       - ksqldb-server
     environment:
-      POSTGRES_PASSWORD: 1234567890
+      POSTGRES_PASSWORD: Ekj31R2_03S2IwLoPsWVa28_sMx_xoS
       POSTGRES_USER: sink
       POSTGRES_DB: raw
 
   filecoin-streamer-worker:
-    build: .
+    build:
+      context: .
+      dockerfile: Dockerfile
     restart: always
     container_name: filecoin-streamer-worker
     depends_on:
@@ -207,6 +211,7 @@ services:
       - ksqldb-server
     environment:
       MBELT_FILECOIN_STREAMER_API_URL: http://116.203.240.62:1234/rpc/v0
+      MBELT_FILECOIN_STREAMER_API_WS_URL: ws://116.203.240.62:1234/rpc/v0
       MBELT_FILECOIN_STREAMER_API_TOKEN:
       MBELT_FILECOIN_STREAMER_KAFKA: broker:9092
-      MBELT_FILECOIN_STREAMER_MIN_HEIGHT: 0
+      MBELT_FILECOIN_STREAMER_PG_URL: postgres://db:5432/raw?user=sink&password=Ekj31R2_03S2IwLoPsWVa28_sMx_xoS&sslmode=disable
