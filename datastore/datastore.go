@@ -15,6 +15,7 @@ const (
 	TopicMessages        = "messages_stream"
 	TopicTipSets         = "tipsets_stream"
 	TopicTipsetsToRevert = "tipsets_to_revert_stream"
+	TopicActorStates     = "actor_states_stream"
 )
 
 type KafkaDatastore struct {
@@ -31,7 +32,7 @@ func Init(config *config.Config) (*KafkaDatastore, error) {
 		// pushChan:     make(chan interface{}),
 	}
 
-	for _, topic := range []string{TopicBlocks, TopicTipsetsToRevert, TopicMessages, TopicTipSets} {
+	for _, topic := range []string{TopicBlocks, TopicTipsetsToRevert, TopicMessages, TopicTipSets, TopicActorStates} {
 		writer := kafka.NewWriter(kafka.WriterConfig{
 			Brokers:  []string{ds.config.KafkaHosts},
 			Topic:    topic,

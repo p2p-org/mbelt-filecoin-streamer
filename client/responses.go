@@ -11,9 +11,14 @@ const (
 	ChainGetGenesis        = "Filecoin.ChainGetGenesis"
 	ChainGetBlock          = "Filecoin.ChainGetBlock"
 	ChainGetTipSetByHeight = "Filecoin.ChainGetTipSetByHeight"
+	ChainGetTipSet         = "Filecoin.ChainGetTipSet"
 	ChainGetBlockMessages  = "Filecoin.ChainGetBlockMessages"
 	ChainGetMessage        = "Filecoin.ChainGetMessage"
 	ChainNotify            = "Filecoin.ChainNotify"
+	ChainHasObj            = "Filecoin.ChainHasObj"
+
+	StateChangedActors     = "Filecoin.StateChangedActors"
+	StateReadState         = "Filecoin.StateReadState"
 )
 
 type TipSet struct {
@@ -34,6 +39,26 @@ type BlockMessages struct {
 type Message struct {
 	APIResponse
 	Result *types.Message `json:"result"` // payload
+}
+
+type Actors struct {
+	APIResponse
+	Result map[string]types.Actor `json:"result"` // payload
+}
+
+type HasObj struct {
+	APIResponse
+	Result bool `json:"result"` // payload
+}
+
+type ActorStateResponse struct {
+	APIResponse
+	Result *ActorState `json:"result"` // payload
+}
+
+type ActorState struct {
+	Balance types.BigInt
+	State   interface{}
 }
 
 type HeadUpdates struct {

@@ -57,9 +57,9 @@ mbelt-filecoin-streamer --sync-from=1000
 Data flow:
 ![flow](images/flow.png "Data flow")
 
-Data that is being requested by mbelt-filecoin-streamer from filecoin node is being pushed to Kafka topics **tipsets_stream**, **blocks_stream**, **messages_stream**, **tipsets_to_revert_stream**.
-Then this data is being pushed to corresponding ksqlDB streams (**TIPSET_STREAM**, **BLOCKS_STREAM**, **MESSAGES_STREAM**, **TIPSETS_TO_REVERT_STREAM**)  and further to corresponding streams with **_AVRO** suffix where they are being converted to AVRO format.
-Then data is being sinked to PostgreSQL tables **filecoin._tipsets**, **filecoin._blocks**, **filecoin._messages**, **filecoin._tipsets_to_revert** (**_** prefix means that tables are temporary), then triggers on those tables convert data into more suitable for storing format and push them to corresponding tables with no **_** prefix in their name. Triggers also delete data from temporary tables after insertion to permanent ones.
+Data that is being requested by mbelt-filecoin-streamer from filecoin node is being pushed to Kafka topics **tipsets_stream**, **blocks_stream**, **messages_stream**, **tipsets_to_revert_stream**, **actor_states_stream**.
+Then this data is being pushed to corresponding ksqlDB streams (**TIPSETS_STREAM**, **BLOCKS_STREAM**, **MESSAGES_STREAM**, **TIPSETS_TO_REVERT_STREAM**, **ACTOR_STATES_STREAM**)  and further to corresponding streams with **_AVRO** suffix where they are being converted to AVRO format.
+Then data is being sinked to PostgreSQL tables **filecoin._tipsets**, **filecoin._blocks**, **filecoin._messages**, **filecoin._tipsets_to_revert**, **filecoin._actor_states** (**_** prefix means that tables are temporary), then triggers on those tables convert data into more suitable for storing format and push them to corresponding tables with no **_** prefix in their name. Triggers also delete data from temporary tables after insertion to permanent ones.
 Triggers on table **filecoin._tipsets_to_revert** on insertion delete corresponding tipsets from **filecoin.tipsets** table.   
 
 ## How does data sink to a DB?
@@ -94,8 +94,8 @@ It collects data from some Kafka topic and inserts the data to a DB table.
 ]
 ```
 
-
 * **BLOCKS_STREAM** and **BLOCKS_STREAM_AVRO** topics:
+
  ```json
  [
    {
@@ -145,7 +145,6 @@ It collects data from some Kafka topic and inserts the data to a DB table.
  ]
 ```
 
-
 * **MESSAGES_STREAM** AND **MESSAGES_STREAM_AVRO** topics:
 
 ```json
@@ -194,15 +193,47 @@ It collects data from some Kafka topic and inserts the data to a DB table.
 ]
 ```
 
+* **ACTOR_STATES_STREAM** AND **ACTOR_STATES_STREAM_AVRO** topics:
+
+```json
+[
+  {
+    "topic": "actor_states_stream",
+    "partition": 0,
+    "offset": 35,
+    "timestamp": 1603964771584,
+    "timestampType": "CREATE_TIME",
+    "headers": [],
+    "key": "t01000_{bafy2bzaceckm3rdrzmf5og3w4bbihnwf7xe5bvsibh5yv2edxztvroojahvqw,bafy2bzacecmabxuahm3evx37los7lt4mnaxg7i4ik6jplfxv2nnwfebb2a7f4,bafy2bzacedpqwacyhdwoopxpjafeadar2r6hplzegijxyoqqfsxjsmxheogki}",
+    "value": {
+      "actor_code": "bafkqaetgnfwc6mrpon2g64tbm5sw22lomvza",
+      "actor_head": "bafy2bzacebwptgbq2nlmyn4ucsjz2lum4qo7nykqr34mcbe6ixuw53ozpdot6",
+      "actor_state_key": "t01000_{bafy2bzaceckm3rdrzmf5og3w4bbihnwf7xe5bvsibh5yv2edxztvroojahvqw,bafy2bzacecmabxuahm3evx37los7lt4mnaxg7i4ik6jplfxv2nnwfebb2a7f4,bafy2bzacedpqwacyhdwoopxpjafeadar2r6hplzegijxyoqqfsxjsmxheogki}",
+      "addr": "t01000",
+      "balance": "4576662981025374931151",
+      "height": 375,
+      "is_account_actor": false,
+      "nonce": 0,
+      "parent_ts_key": "{bafy2bzacea7vaiwd3hzs3ejgiy55dozaacrukk6gcil6v2vy5766arxlnwovg,bafy2bzacebw6mmemqngcmhklfn5zfqxwbolyf4gxzjo5r7h5wv4dik7fh3w3g,bafy2bzacedyxbbjr4dhge2hyqjgz326eowhudnviqfrxq5f3dxcelryg6hdpg}",
+      "state": "{\"AllocatedSectors\":{\"/\":\"bafy2bzacebyt5fitbtfj6qk2f5qeorfl7kfiriab547olwh7krzspjq2kv34c\"},\"CurrentDeadline\":0,\"Deadlines\":{\"/\":\"bafy2bzacedwohbh2mede6itj74m7onl4nv4ejrs6dmlnm2rxuc42inhmi3jv6\"},\"EarlyTerminations\":[0],\"FeeDebt\":\"0\",\"Info\":{\"/\":\"bafy2bzacea52isokwuop2rcqbie5uvltkpmdjt7mg5povvsmp3avih2az4xli\"},\"InitialPledge\":\"159999997489079910400\",\"LockedFunds\":\"4141528229167716516047\",\"PreCommitDeposits\":\"0\",\"PreCommittedSectors\":{\"/\":\"bafy2bzaceamp42wmmgr2g2ymg46euououzfyck7szknvfacqscohrvaikwfay\"},\"PreCommittedSectorsExpiry\":{\"/\":\"bafy2bzaceawdouk3zqz2pm25qbsv5bzk2uxsbhsqm7gvsbmryk4cwsjqsbkta\"},\"ProvingPeriodStart\":658,\"Sectors\":{\"/\":\"bafy2bzacectjy4uapslgwlet5ue4en6nqk6zgvzg23f4jeip5szn6zhnti6he\"},\"VestingFunds\":{\"/\":\"bafy2bzacedjryafr2b3pqko3ipm7drmvwkimwug7oxnvimqd6goc6q2w5gp46\"}}",
+      "state_root": "bafy2bzacebzf6of2fdkfbibw3mhxyucw7r4le3yahlwacgfx5l3sxznq547z4",
+      "ts_key": "{bafy2bzaceckm3rdrzmf5og3w4bbihnwf7xe5bvsibh5yv2edxztvroojahvqw,bafy2bzacecmabxuahm3evx37los7lt4mnaxg7i4ik6jplfxv2nnwfebb2a7f4,bafy2bzacedpqwacyhdwoopxpjafeadar2r6hplzegijxyoqqfsxjsmxheogki}"
+    }
+  }
+]
+```
+
 Input and enrichment data are intentionally non-optimal to test and show how different edge cases are handled
 
 ## End-to-end latency of streams(topics)
 * **TIPSETS_STREAM** (intermediate stream) - 3ms
-* **TIPSETS_STREAM_AVRO** (raw block's data sinking to Postgres) - 63ms
+* **TIPSETS_STREAM_AVRO** (raw tipsets data sinking to Postgres) - 63ms
 * **BLOCKS_STREAM** (intermediate stream) - 3ms
 * **BLOCKS_STREAM_AVRO** (raw block's data sinking to Postgres) - 63ms
 * **MESSAGES_STREAM** (intermediate stream to process data) - 3ms
 * **MESSAGES_STREAM_AVRO** (parsed extrinsic's data sinking to Postgres) - 63ms
+* **ACTOR_STATES_STREAM** (intermediate stream) - 3ms
+* **ACTOR_STATES_STREAM_AVRO** (raw tipsets data sinking to Postgres) - 63ms
 
 ## How to see PoC?
 

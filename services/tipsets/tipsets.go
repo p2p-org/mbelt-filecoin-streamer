@@ -36,6 +36,10 @@ func (s *TipSetsService) GetByHeight(height abi.ChainEpoch) (*types.TipSet, bool
 	return s.api.GetByHeight(height)
 }
 
+func (s *TipSetsService) GetByKey(key types.TipSetKey) *types.TipSet {
+	return s.api.GetByKey(key)
+}
+
 func (s *TipSetsService) PushTipSetsToRevert(blocks *types.TipSet) {
 	s.push(datastore.TopicTipsetsToRevert, blocks)
 }

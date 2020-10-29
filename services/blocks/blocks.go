@@ -56,24 +56,34 @@ func (s *BlocksService) Push(blocks []*types.BlockHeader) {
 }
 
 func serializeHeader(header *types.BlockHeader) map[string]interface{} {
-	result := map[string]interface{}{
-		"cid":          header.Cid().String(),
-		"height":       header.Height,
-		"win_count":    header.ElectionProof.WinCount,
-		"miner":        header.Miner.String(),
-		"messages_cid": header.Messages.String(),
-		"validated":    header.IsValidated(),
-		"blocksig": map[string]interface{}{
+	var blockSig map[string]interface{}
+	if header.BlockSig != nil {
+		blockSig = map[string]interface{}{
 			"type": header.BlockSig.Type,
 			"data": header.BlockSig.Data,
-		},
-		"bls_aggregate": map[string]interface{}{
+		}
+	}
+
+	var blsAggregate map[string]interface{}
+	if header.BLSAggregate != nil {
+		blockSig = map[string]interface{}{
 			"type": header.BLSAggregate.Type,
 			"data": header.BLSAggregate.Data,
-		},
-		"block": header,
+		}
+	}
+
+	result := map[string]interface{}{
+		"cid":           header.Cid().String(),
+		"height":        header.Height,
+		"win_count":     header.ElectionProof.WinCount,
+		"miner":         header.Miner.String(),
+		"messages_cid":  header.Messages.String(),
+		"validated":     header.IsValidated(),
+		"blocksig":      blockSig,
+		"bls_aggregate": blsAggregate,
+		"block":         header,
 		// "block_time": time.Unix(int64(header.Timestamp), 0).Format(time.RFC3339),
-		"block_time": header.Timestamp,
+		"block_time":    header.Timestamp,
 	}
 
 	// Parents data
