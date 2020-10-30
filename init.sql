@@ -40,6 +40,22 @@ CREATE TABLE IF NOT EXISTS filecoin.tipsets
     "min_timestamp" TIMESTAMP
 );
 
+CREATE TABLE IF NOT EXISTS filecoin.actor_states
+(
+    "actor_state_key"  VARCHAR(256) NOT NULL PRIMARY KEY,
+    "actor_code"       VARCHAR(256),
+    "actor_head"       VARCHAR(256),
+    "nonce"            BIGINT,
+    "balance"          BIGINT,
+    "is_account_actor" BOOLEAN,
+    "state_root"       VARCHAR(256),
+    "height"           BIGINT,
+    "ts_key"           VARCHAR(256),
+    "parent_ts_key"    VARCHAR(256),
+    "addr"             VARCHAR(256),
+    "state"            JSONB
+);
+
 -- Fix for unquoting varchar json
 CREATE OR REPLACE FUNCTION varchar_to_jsonb(varchar) RETURNS jsonb AS
 $$
@@ -98,6 +114,22 @@ CREATE TABLE IF NOT EXISTS filecoin._tipsets_to_revert
     "parent_state"  VARCHAR,
     "blocks"        VARCHAR(256)[],
     "min_timestamp" TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS filecoin._actor_states
+(
+    "actor_state_key"  VARCHAR(256) NOT NULL PRIMARY KEY,
+    "actor_code"       VARCHAR(256),
+    "actor_head"       VARCHAR(256),
+    "nonce"            BIGINT,
+    "balance"          BIGINT,
+    "is_account_actor" BOOLEAN,
+    "state_root"       VARCHAR(256),
+    "height"           BIGINT,
+    "ts_key"           VARCHAR(256),
+    "parent_ts_key"    VARCHAR(256),
+    "addr"             VARCHAR(256),
+    "state"            TEXT
 );
 
 
@@ -310,9 +342,72 @@ CREATE TRIGGER trg_tipsets_sink_trim_after_upsert
     FOR EACH ROW
 EXECUTE PROCEDURE filecoin.sink_trim_tipsets_after_insert();
 
+-- Actors
+
+CREATE OR REPLACE FUNCTION filecoin.sink_actor_states_insert()
+    RETURNS trigger AS
+$$
+BEGIN
+    INSERT INTO filecoin.actor_states("actor_state_key",
+                                "actor_code",
+                                "actor_head",
+                                "nonce",
+                                "balance",
+                                "is_account_actor",
+                                "state_root",
+                                "height",
+                                "ts_key",
+                                "parent_ts_key",
+                                "addr",
+                                "state")
+    VALUES (NEW."actor_state_key",
+            NEW."actor_code",
+            NEW."actor_head",
+            NEW."nonce",
+            NEW."balance",
+            NEW."is_account_actor",
+            NEW."state_root",
+            NEW."height",
+            NEW."ts_key",
+            NEW."parent_ts_key",
+            NEW."addr",
+            NEW."state"::jsonb)
+    ON CONFLICT DO NOTHING;
+
+    RETURN NEW;
+END ;
+
+$$
+    LANGUAGE 'plpgsql';
+
+CREATE TRIGGER trg_actor_states_sink_upsert
+    BEFORE INSERT
+    ON filecoin._actor_states
+    FOR EACH ROW
+EXECUTE PROCEDURE filecoin.sink_actor_states_insert();
+
+CREATE OR REPLACE FUNCTION filecoin.sink_trim_actor_states_after_insert()
+    RETURNS trigger AS
+$$
+BEGIN
+    DELETE FROM filecoin._actor_states WHERE "actor_state_key" = NEW."actor_state_key";
+    RETURN NEW;
+END ;
+
+$$
+    LANGUAGE 'plpgsql';
+
+CREATE TRIGGER trg_actor_states_sink_trim_after_upsert
+    AFTER INSERT
+    ON filecoin._actor_states
+    FOR EACH ROW
+EXECUTE PROCEDURE filecoin.sink_trim_actor_states_after_insert();
+
 -- Create indexes
 
 CREATE INDEX filecoin_block_height_idx ON filecoin.blocks ("height");
+CREATE INDEX filecoin_actor_states_height_idx ON filecoin.actor_states ("height");
+CREATE INDEX filecoin_actor_states_addr_idx ON filecoin.actor_states ("addr");
 
 -- tmp
 CREATE INDEX filecoin_block_cid_idx ON filecoin.blocks ("cid");

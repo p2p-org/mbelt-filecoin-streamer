@@ -9,8 +9,8 @@ import (
 )
 
 const (
-	jsonRPCVersion = "2.0"
-	requestTimeout = 2 * time.Second
+	jsonRPCVersion   = "2.0"
+	wsRequestTimeout = 2 * time.Second
 )
 
 type RPCClient struct {
@@ -81,7 +81,7 @@ func (c *RPCClient) Subscribe(method string, params []interface{}, consumer *cha
 		return -1, err
 	}
 
-	subMsgCtx, subMsgCancel := context.WithTimeout(ctx, requestTimeout)
+	subMsgCtx, subMsgCancel := context.WithTimeout(ctx, wsRequestTimeout)
 	defer subMsgCancel()
 
 	subChan := make(chan SubResponse)

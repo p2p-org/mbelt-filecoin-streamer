@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/filecoin-project/go-address"
 	"github.com/filecoin-project/lotus/api"
 	"github.com/filecoin-project/lotus/chain/types"
 	"github.com/filecoin-project/specs-actors/actors/abi"
@@ -18,7 +19,8 @@ import (
 )
 
 const (
-	protocolVersion = "2.0"
+	protocolVersion    = "2.0"
+	httpRequestTimeout = 20 * time.Second
 )
 
 type APIClient struct {
@@ -87,7 +89,7 @@ func (c *APIClient) do(method string, params []interface{}, dst interface{}) err
 		request.Header.Set("Authorization", fmt.Sprintf("Bearer %s", c.jwt))
 	}
 
-	client := &http.Client{}
+	client := &http.Client{Timeout: httpRequestTimeout}
 	resp, err := client.Do(request)
 
 	if err != nil {
@@ -206,6 +208,21 @@ func (c *APIClient) GetByHeight(height abi.ChainEpoch) (*types.TipSet, bool) {
 	return resp.Result, true
 }
 
+func (c *APIClient) GetByKey(key types.TipSetKey) *types.TipSet {
+	resp := &TipSet{}
+	err := c.do(ChainGetTipSet, []interface{}{key}, resp)
+	if err != nil {
+		log.Println("[API][Error][GetByKey]", err)
+		return nil
+	}
+
+	if resp.Error != nil {
+		log.Println("[API][Error][GetByKey]", resp.Error.Message)
+		return nil
+	}
+	return resp.Result
+}
+
 func (c *APIClient) GetBlockMessages(cid cid.Cid) *api.BlockMessages {
 	resp := &BlockMessages{}
 	err := c.do(ChainGetBlockMessages, []interface{}{cid}, resp)
@@ -229,6 +246,48 @@ func (c *APIClient) GetMessage(cid cid.Cid) *types.Message {
 
 	if resp.Error != nil {
 		log.Println("[API][Error][GetMessage]", resp.Error.Message)
+		return nil
+	}
+	return resp.Result
+}
+
+func (c *APIClient) ChainHasObj(cid cid.Cid) (bool, error) {
+	resp := &HasObj{}
+	err := c.do(ChainHasObj, []interface{}{cid}, resp)
+	if err != nil {
+		return false, err
+	}
+
+	if resp.Error != nil {
+		log.Println("[API][Error][GetChangedActors]", resp.Error.Message)
+		return false, errors.New(resp.Error.Message)
+	}
+	return resp.Result, nil
+}
+
+func (c *APIClient) GetChangedActors(start, end cid.Cid) map[string]types.Actor {
+	resp := &Actors{}
+	err := c.do(StateChangedActors, []interface{}{start, end}, resp)
+	if err != nil {
+		return nil
+	}
+
+	if resp.Error != nil {
+		log.Println("[API][Error][GetChangedActors]", resp.Error.Message)
+		return nil
+	}
+	return resp.Result
+}
+
+func (c *APIClient) ReadState(actor address.Address, tsk types.TipSetKey) *ActorState {
+	resp := &ActorStateResponse{}
+	err := c.do(StateReadState, []interface{}{actor, tsk}, resp)
+	if err != nil {
+		return nil
+	}
+
+	if resp.Error != nil {
+		log.Println("[API][Error][GetChangedActors]", resp.Error.Message)
 		return nil
 	}
 	return resp.Result

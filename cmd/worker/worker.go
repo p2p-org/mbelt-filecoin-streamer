@@ -2,12 +2,16 @@ package worker
 
 import (
 	"context"
+	"encoding/json"
+	"github.com/filecoin-project/go-address"
 	"github.com/filecoin-project/lotus/api"
 	"github.com/filecoin-project/lotus/chain/types"
 	"github.com/filecoin-project/specs-actors/actors/abi"
+	"github.com/ipfs/go-cid"
 	"github.com/p2p-org/mbelt-filecoin-streamer/config"
 	"github.com/p2p-org/mbelt-filecoin-streamer/services"
 	"github.com/p2p-org/mbelt-filecoin-streamer/services/messages"
+	"github.com/p2p-org/mbelt-filecoin-streamer/services/state"
 	"log"
 	"os"
 	"os/signal"
@@ -109,18 +113,18 @@ func updateHeads(ctx context.Context) {
 					}
 					// Pushing block and its messages to kafka just in case.
 					// TODO: Duplicates should be handled on db's side
-					pushTipsetWithBlocksAndMessages(hu.Val)
+					pushTipsetWithBlocksAndMessagesAndActorChanges(hu.Val)
 
 				case HeadEventRevert:
 					services.App().TipSetsService().PushTipSetsToRevert(hu.Val)
 
 				case HeadEventApply:
-					pushTipsetWithBlocksAndMessages(hu.Val)
+					pushTipsetWithBlocksAndMessagesAndActorChanges(hu.Val)
 
 				default:
 					log.Println("[App][Debug][updateHeads]", "yet unknown event encountered:", hu.Type)
 					// Pushing just in case
-					pushTipsetWithBlocksAndMessages(hu.Val)
+					pushTipsetWithBlocksAndMessagesAndActorChanges(hu.Val)
 				}
 			}
 		case <-ctx.Done():
@@ -168,11 +172,11 @@ func syncTo(from int, to int, ctx context.Context) {
 
 				go func(height abi.ChainEpoch) {
 					defer wg.Done()
-					_, tipSet, blocks, msgs := syncForHeight(height)
+					_, tipSet, blocks, msgs, changes := syncForHeight(height)
 					services.App().TipSetsService().Push(tipSet)
 					services.App().BlocksService().Push(blocks)
 					services.App().MessagesService().Push(msgs)
-
+					services.App().StateService().PushActors(changes)
 				}(height)
 
 				height++
@@ -185,7 +189,7 @@ func syncTo(from int, to int, ctx context.Context) {
 	}
 }
 
-func syncForHeight(height abi.ChainEpoch) (isHeightNotReached bool, tipSet *types.TipSet, blocks []*types.BlockHeader, extMessages []*messages.MessageExtended) {
+func syncForHeight(height abi.ChainEpoch) (isHeightNotReached bool, tipSet *types.TipSet, blocks []*types.BlockHeader, extMessages []*messages.MessageExtended, changes []*state.ActorInfo) {
 	log.Println("[Datastore][Debug]", "Load height:", height)
 
 	tipSet, isHeightNotReached = services.App().TipSetsService().GetByHeight(height)
@@ -202,6 +206,9 @@ func syncForHeight(height abi.ChainEpoch) (isHeightNotReached bool, tipSet *type
 
 	blocks = tipSet.Blocks()
 	extMessages = getBlockMessages(blocks)
+
+	// ignoring null rounds
+	changes, _ = collectActorChangesForBlocks(blocks)
 
 	return
 }
@@ -227,9 +234,101 @@ func getBlockMessages(blocks []*types.BlockHeader) (msgs []*messages.MessageExte
 	return msgs
 }
 
-func pushTipsetWithBlocksAndMessages(tipset *types.TipSet) {
+func collectActorChanges(block *types.BlockHeader) (out []*state.ActorInfo, nullRounds []types.TipSetKey) {
+	//start := time.Now()
+	//defer func() {
+	//	log.Println("Collected Actor Changes", "duration", time.Since(start).String(), "len", len(out))
+	//}()
+
+	parentTipSet := services.App().TipSetsService().GetByKey(types.NewTipSetKey(block.Parents...))
+	if parentTipSet == nil {
+		log.Println("[App][Debug][collectActorChanges] parent is nil. height: ", block.Height)
+		return nil, nil
+	}
+	if parentTipSet.ParentState().Equals(block.ParentStateRoot) {
+		nullRounds = append(nullRounds, parentTipSet.Key())
+	}
+
+	// collect all actors that had state changes between the block's parent-state and its grandparent-state.
+	// TODO: changes will contain deleted actors, this causes needless processing further down the pipeline, consider
+	// a separate strategy for deleted actors
+	// (these comments as well as algorithm were copied from lotus/cmd/lotus-chainwatch/processor/processor.go)
+	changes := services.App().StateService().GetChangedActors(parentTipSet.ParentState(), block.ParentStateRoot)
+
+	out = make([]*state.ActorInfo, 0, len(changes))
+	actorsSeen := map[cid.Cid]struct{}{}
+
+	// record the state of all actors that have changed
+	for a, act := range changes {
+		// ignore actors that were deleted. (Do we actually need to ignore them?)
+		has, err := services.App().StateService().ChainHasObj(act.Head)
+		if err != nil {
+			log.Println("[App][Error][collectActorChanges]", err)
+		}
+		if !has {
+			continue
+		}
+
+		addr, err := address.NewFromString(a)
+		if err != nil {
+			log.Println("[App][Error][collectActorChanges]", err)
+			continue
+		}
+
+		ast := services.App().StateService().ReadState(addr, parentTipSet.Key())
+
+		if ast == nil {
+			log.Println("[App][Error][collectActorChanges]", "empty state!")
+			continue
+		}
+
+		actorState, err := json.Marshal(ast.State)
+		if err != nil {
+			log.Println("[App][Error][collectActorChanges]", err)
+			continue
+		}
+
+		if _, ok := actorsSeen[act.Head]; !ok {
+			out = append(out, &state.ActorInfo{
+				Act:         act,
+				StateRoot:   block.ParentStateRoot,
+				Height:      block.Height,
+				TsKey:       parentTipSet.Key(),
+				ParentTsKey: parentTipSet.Parents(),
+				Addr:        addr,
+				State:       string(actorState),
+			})
+		}
+		actorsSeen[act.Head] = struct{}{}
+	}
+
+	return out, nullRounds
+}
+
+func collectActorChangesForBlocks(blocks []*types.BlockHeader) (changes []*state.ActorInfo, nullRrounds []types.TipSetKey) {
+	wg := sync.WaitGroup{}
+	for _, block := range blocks {
+		// collecting changes async five blocks at a time
+		for i := 0; i < 5; i++ {
+			go func() {
+				wg.Add(1)
+				blockChanges, blockNullRounds := collectActorChanges(block)
+				changes = append(changes, blockChanges...)
+				nullRrounds = append(nullRrounds, blockNullRounds...)
+				wg.Done()
+			}()
+		}
+		wg.Wait()
+	}
+
+	return
+}
+
+func pushTipsetWithBlocksAndMessagesAndActorChanges(tipset *types.TipSet) {
+	blocks := tipset.Blocks()
 	services.App().TipSetsService().Push(tipset)
-	msgs := getBlockMessages(tipset.Blocks())
-	services.App().BlocksService().Push(tipset.Blocks())
-	services.App().MessagesService().Push(msgs)
+	services.App().BlocksService().Push(blocks)
+	services.App().MessagesService().Push(getBlockMessages(blocks))
+	changes, _ := collectActorChangesForBlocks(blocks)
+	services.App().StateService().PushActors(changes)
 }
