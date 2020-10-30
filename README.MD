@@ -253,3 +253,143 @@ You'll see an overview of the cluster and some tabs:
 ![ksqldb](images/ksqlDB.png "ksqlDB")
     * Sub-tab **Running queries** provides information about running queries in the system.
     ![queries](images/queries.png "Queries")
+
+## GraphQL API
+
+Before you run API you will need to apply migrations. Run migrator via docker compose:
+
+```shell script
+docker-compose up -d migrator
+```
+
+or set PG_URL (URL to PostgreSQL DB) environment variable and run it without docker. Example:
+
+```shell script
+go run post-graphile-migrations migrator.go
+```
+
+Then you need to start PostGraphile. Run it via docker compose:
+
+```shell script
+docker-compose up -d migrator
+```
+
+or
+
+```shell script
+postgraphile --subscriptions --dynamic-json --no-setof-functions-contain-nulls --no-ignore-rbac --show-error-stack=json --graphiql "/"  --export-schema-graphql schema.graphql --enable-query-batching --legacy-relations omit --schema graphql --connection {POSTGRES_URL} --watch  
+```
+
+You can use PostGraphile UI via http://localhost:5000/
+
+To do queries, do POST requests to
+```bash
+POST http://localhost:5000/graphql
+```
+
+Example:
+```bash
+curl --request POST 'http://localhost:5000/graphql' \
+--header 'Content-Type: application/json' \
+--data '{
+	"query": "query { allBlocks(first: 1) { edges { node { cid height parents winCount msgCount miner validated blocksig blsAggregate block blockTime } } } }",
+	"variables": null
+}'
+```
+
+Response:
+```json
+{
+  "data": {
+    "allBlocks": {
+      "edges": [
+        {
+          "node": {
+            "cid": "bafy2bzaceduqbenipcvmlhjcr5pxlpjqdpqudp3a254blvbizq75vevpzeaxm",
+            "height": "7637",
+            "parents": {
+              "cids": [
+                "bafy2bzacect5rifqtregqymftvguus32xxosdkf2hhcld5pzypmlhz3gobijq",
+                "bafy2bzaced3jp7gze45ljknutlz4xsv5sxjkmapbrtj4nzndw2tsoopmguark"
+              ],
+              "weight": "120877935",
+              "base_fee": "100",
+              "state_root": {
+                "/": "bafy2bzaceajgj44nfidlxcvdueu3ra3wmf7p2fmpfufew4leyyx2hrgs2z5mg"
+              },
+              "message_receipts": "bafy2bzacedswlcz5ddgqnyo3sak3jmhmkxashisnlpq6ujgyhe4mlobzpnhs6"
+            },
+            "winCount": 3,
+            "msgCount": "0",
+            "miner": "t01001",
+            "validated": false,
+            "blocksig": {
+              "data": "gf037OGMsZET3fRIT3sirIETMW3BZYYLKUyz15+ImI4AFq5OcQfoQB6YcUAHpGGMFpS84/ZbcfbPhzWRmD7gglRm084picmI9rNLGJPjjP5H01PCJoPUYlaEepY2eX2Q",
+              "type": 2
+            },
+            "blsAggregate": {
+              "data": "wAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+              "type": 2
+            },
+            "block": {
+              "Miner": "t01001",
+              "Height": 7637,
+              "Ticket": {
+                "VRFProof": "uPZCTamFLdMmjEL1s5k06lkOyiWdfuCr79NOciM6G7cH1t9JZHkn5QLdjtazvHJsBnogI4VbGxhVBb8m5p3PrCJAuMUJeDASwl6LBTXd9Ej6E94ZUMKhciPTy3ruAgtb"
+              },
+              "Parents": [
+                {
+                  "/": "bafy2bzacect5rifqtregqymftvguus32xxosdkf2hhcld5pzypmlhz3gobijq"
+                },
+                {
+                  "/": "bafy2bzaced3jp7gze45ljknutlz4xsv5sxjkmapbrtj4nzndw2tsoopmguark"
+                }
+              ],
+              "BlockSig": {
+                "Data": "gf037OGMsZET3fRIT3sirIETMW3BZYYLKUyz15+ImI4AFq5OcQfoQB6YcUAHpGGMFpS84/ZbcfbPhzWRmD7gglRm084picmI9rNLGJPjjP5H01PCJoPUYlaEepY2eX2Q",
+                "Type": 2
+              },
+              "Messages": {
+                "/": "bafy2bzacecmda75ovposbdateg7eyhwij65zklgyijgcjwynlklmqazpwlhba"
+              },
+              "Timestamp": 1600392690,
+              "BLSAggregate": {
+                "Data": "wAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+                "Type": 2
+              },
+              "ParentWeight": "120877935",
+              "WinPoStProof": [
+                {
+                  "PoStProof": 2,
+                  "ProofBytes": "l4YcoLDjn9mCI1Pn4UDD93uPJLzcW7pceacIx11RQgcK1G+Oc9ROFzHc/62njyRThCr7bAgPgqP1lMy2N+nYgCpJu/C4cZ/Z6qHxuKfwb02HuwLwu728DVJEHXia/x4YEdnc9y6ZYKC1CBy/QeC862Hrj7OHqjy6wUnSEo4Q5DBcrAalAkvu53bL0+O5PdDJlFJ40Y0tIAyWgrVWJVuFRL8v+HG7GlzJCib9rLSVIlvDMZI+kgmIdqwJ49o5gwLG"
+                }
+              ],
+              "BeaconEntries": [
+                {
+                  "Data": "ifn15S8pW1slIkNAP4mRyidzvfqwTuRAmFjO8EfPBMTqN2i0GlpzZ33ePkcyo85JD3LkzQN5mhP5uuWaQ7/fE6pbmVZmSRY0dgkXWCAo+2sMvPvvaZfTPO74vavchGVW",
+                  "Round": 165387
+                }
+              ],
+              "ElectionProof": {
+                "VRFProof": "hS3JYA9rHB6j5irvXCdHV50KZTDsXNhggIZWr7UUA1zIiGcHtzRExnKYYfo9H028B1yXj4owlAz4WMJDqRcZAt9+tnQ2Z2ZGVMhJEudOUxrLQNlGGz/MM7xxD/uijNut",
+                "WinCount": 3
+              },
+              "ForkSignaling": 0,
+              "ParentBaseFee": "100",
+              "ParentStateRoot": {
+                "/": "bafy2bzaceajgj44nfidlxcvdueu3ra3wmf7p2fmpfufew4leyyx2hrgs2z5mg"
+              },
+              "ParentMessageReceipts": {
+                "/": "bafy2bzacedswlcz5ddgqnyo3sak3jmhmkxashisnlpq6ujgyhe4mlobzpnhs6"
+              }
+            },
+            "blockTime": "2020-09-18T01:31:30"
+          }
+        }
+      ]
+    }
+  }
+}
+```
+
+## The list of [extra queries](QUERIES.md)
