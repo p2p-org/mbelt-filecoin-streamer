@@ -6,7 +6,7 @@ DROP TYPE block_return;
 
 DROP TYPE tipset_return;
 
-DROP TYPE messages_return;
+DROP TYPE message_return;
 
 DROP FUNCTION graphql.all_blocks;
 
