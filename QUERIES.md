@@ -7,6 +7,9 @@
 ## Get all messages
 ![AllMessages](./images/allMessages.png)
 
+## Get all actor states
+![AllActorStates](./images/allActorStates.png)
+
 ## Get tipset by height
 ![TipsetByHeight](./images/tipsetByHeight.png)
 
@@ -51,3 +54,15 @@
 
 ## Get messages by "from" and "to" and method
 ![MessagesByFromAndToAndMethod](./images/messagesByFromAndToAndMethod.png)
+
+## Get all account actor states
+![AllAccountActorStates](./images/allAccountActorStates.png)
+
+## Get actor states by tipset key
+![AllActorStatesByTsKey](./images/allActorStatesByTsKey.png)
+
+## Get actor states by address
+![AllActorStatesByAddr](./images/allActorStatesByAddr.png)
+
+## Get actor states by height
+![AllActorStatesByHeight](./images/allActorStatesByHeight.png)
