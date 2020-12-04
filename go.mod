@@ -3,9 +3,10 @@ module github.com/p2p-org/mbelt-filecoin-streamer
 go 1.14
 
 require (
-	github.com/filecoin-project/go-address v0.0.3
-	github.com/filecoin-project/lotus v0.5.3
-	github.com/filecoin-project/specs-actors v0.9.3
+	github.com/filecoin-project/go-address v0.0.5-0.20201103152444-f2023ef3f5bb
+	github.com/filecoin-project/go-state-types v0.0.0-20201102161440-c8033295a1fc
+	github.com/filecoin-project/lotus v1.2.2
+	github.com/filecoin-project/specs-actors v0.9.13
 	github.com/golang-migrate/migrate/v4 v4.13.0
 	github.com/gorilla/websocket v1.4.2
 	github.com/ipfs/go-cid v0.0.7

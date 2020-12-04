@@ -1,6 +1,6 @@
 CREATE STREAM BLOCKS_STREAM (
   "cid" VARCHAR,
-  "height" BIGINT,
+  "height" STRING,
   "parents" VARCHAR,
   "win_count" INTEGER,
   "miner" VARCHAR,
@@ -21,7 +21,7 @@ CREATE STREAM MESSAGES_STREAM (
   "method" INTEGER,
   "from" VARCHAR,
   "to" VARCHAR,
-  "value" BIGINT,
+  "value" STRING,
   "gas" VARCHAR,
   "params" STRING,
   "data" VARCHAR,
@@ -32,9 +32,9 @@ CREATE STREAM MESSAGES_STREAM_AVRO WITH(PARTITIONS=1, REPLICAS=1, VALUE_FORMAT='
 FROM MESSAGES_STREAM EMIT CHANGES;
 
 CREATE STREAM TIPSETS_STREAM (
-  "height" BIGINT,
+  "height" STRING,
   "parents" STRING,
-  "parent_weight" BIGINT,
+  "parent_weight" STRING,
   "parent_state" VARCHAR,
   "blocks" STRING,
   "min_timestamp" BIGINT
@@ -44,9 +44,9 @@ CREATE STREAM TIPSETS_STREAM_AVRO WITH(PARTITIONS=1, REPLICAS=1, VALUE_FORMAT='A
 FROM TIPSETS_STREAM EMIT CHANGES;
 
 CREATE STREAM TIPSETS_TO_REVERT_STREAM (
-  "height" BIGINT,
+  "height" STRING,
   "parents" STRING,
-  "parent_weight" BIGINT,
+  "parent_weight" STRING,
   "parent_state" VARCHAR,
   "blocks" STRING,
   "min_timestamp" BIGINT
@@ -59,11 +59,10 @@ CREATE STREAM ACTOR_STATES_STREAM (
   "actor_state_key" VARCHAR,
   "actor_code" VARCHAR,
   "actor_head" VARCHAR,
-  "nonce" BIGINT,
-  "balance" BIGINT,
-  "is_account_actor" BOOLEAN,
+  "nonce" STRING,
+  "balance" STRING,
   "state_root" VARCHAR,
-  "height" BIGINT,
+  "height" STRING,
   "ts_key" VARCHAR,
   "parent_ts_key" VARCHAR,
   "addr" VARCHAR,
@@ -72,3 +71,73 @@ CREATE STREAM ACTOR_STATES_STREAM (
 
 CREATE STREAM ACTOR_STATES_STREAM_AVRO WITH(PARTITIONS=1, VALUE_FORMAT='AVRO', REPLICAS=1) AS SELECT *
 FROM ACTOR_STATES_STREAM EMIT CHANGES;
+
+CREATE STREAM MINER_INFOS_STREAM (
+  "miner_info_key" VARCHAR,
+  "miner" VARCHAR,
+  "owner" VARCHAR,
+  "worker" VARCHAR,
+  "control_addresses" STRING,
+  "new_worker_address" VARCHAR,
+  "new_worker_effective_at" STRING,
+  "peer_id" VARCHAR,
+  "multiaddrs" STRING,
+  "seal_proof_type" INT,
+  "sector_size" STRING,
+  "window_post_partition_sectors" STRING,
+  "miner_raw_byte_power" STRING,
+  "miner_quality_adj_power" STRING,
+  "total_raw_byte_power" STRING,
+  "total_quality_adj_power" STRING,
+  "height" STRING
+) WITH (kafka_topic='miner_infos_stream', value_format='JSON');
+
+CREATE STREAM MINER_INFOS_STREAM_AVRO WITH(PARTITIONS=1, VALUE_FORMAT='AVRO', REPLICAS=1) AS SELECT *
+FROM MINER_INFOS_STREAM EMIT CHANGES;
+
+CREATE STREAM MINER_SECTORS_STREAM (
+  "miner_sector_key" VARCHAR,
+  "sector_number" STRING,
+  "seal_proof" INT,
+  "sealed_cid" VARCHAR,
+  "deal_ids" ARRAY<INT>,
+  "activation" STRING,
+  "expiration" STRING,
+  "deal_weight" STRING,
+  "verified_deal_weight" STRING,
+  "initial_pledge" STRING,
+  "expected_day_reward" STRING,
+  "expected_storage_pledge" STRING,
+  "miner" VARCHAR,
+  "height" STRING
+) WITH (kafka_topic='miner_sectors_stream', value_format='JSON');
+
+CREATE STREAM MINER_SECTORS_STREAM_AVRO WITH(PARTITIONS=1, VALUE_FORMAT='AVRO', REPLICAS=1) AS SELECT *
+FROM MINER_SECTORS_STREAM EMIT CHANGES;
+
+CREATE STREAM REWARD_ACTOR_STATES_STREAM (
+  "epoch" STRING,
+  "actor_code" VARCHAR,
+  "actor_head" VARCHAR,
+  "nonce" STRING,
+  "balance" STRING,
+  "state_root" VARCHAR,
+  "ts_key" VARCHAR,
+  "parent_ts_key" VARCHAR,
+  "addr" VARCHAR,
+  "cumsum_baseline" STRING,
+  "cumsum_realized" STRING,
+  "effective_baseline_power" STRING,
+  "effective_network_time" INT,
+  "this_epoch_baseline_power" STRING,
+  "this_epoch_reward" STRING,
+  "total_mined" STRING,
+  "simple_total" STRING,
+  "baseline_total" STRING,
+  "total_storage_power_reward" STRING,
+  "this_epoch_reward_smoothed_position_estimate" STRING,
+  "this_epoch_reward_smoothed_velocity_estimate" STRING
+) WITH (kafka_topic='reward_actor_states_stream', value_format='JSON');
+
+CREATE STREAM REWARD_ACTOR_STATES_STREAM_AVRO WITH(PARTITIONS=1, VALUE_FORMAT='AVRO', REPLICAS=1) AS SELECT *
+FROM REWARD_ACTOR_STATES_STREAM EMIT CHANGES;

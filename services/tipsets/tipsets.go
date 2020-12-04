@@ -1,8 +1,8 @@
 package tipsets
 
 import (
+	"github.com/filecoin-project/go-state-types/abi"
 	"github.com/filecoin-project/lotus/chain/types"
-	"github.com/filecoin-project/specs-actors/actors/abi"
 	"github.com/p2p-org/mbelt-filecoin-streamer/client"
 	"github.com/p2p-org/mbelt-filecoin-streamer/config"
 	"github.com/p2p-org/mbelt-filecoin-streamer/datastore"
@@ -68,24 +68,9 @@ func serializeTipSet(tipset *types.TipSet) map[string]interface{} {
 		"parent_weight": tipset.ParentWeight(),
 		"parent_state":  tipset.ParentState().String(),
 		"min_timestamp": tipset.MinTimestamp(),
+		"blocks":        utils.CidsToVarcharArray(tipset.Cids()),
+		"parents":       utils.CidsToVarcharArray(tipset.Parents().Cids()),
 	}
-
-	blocksCids := make([]string, 0)
-
-	for _, cid := range tipset.Cids() {
-		blocksCids = append(blocksCids, cid.String())
-	}
-	result["blocks"] = utils.ToVarcharArray(blocksCids)
-
-	parentsCids := make([]string, 0)
-
-	if len(tipset.Blocks()) > 0 {
-		for _, cid := range tipset.Blocks()[0].Parents {
-			parentsCids = append(parentsCids, cid.String())
-		}
-	}
-
-	result["parents"] = utils.ToVarcharArray(parentsCids)
 
 	return result
 }

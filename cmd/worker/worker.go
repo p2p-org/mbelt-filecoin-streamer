@@ -4,24 +4,28 @@ import (
 	"context"
 	"encoding/json"
 	"github.com/filecoin-project/go-address"
+	"github.com/filecoin-project/go-state-types/abi"
 	"github.com/filecoin-project/lotus/api"
 	"github.com/filecoin-project/lotus/chain/types"
-	"github.com/filecoin-project/specs-actors/actors/abi"
+	"github.com/filecoin-project/specs-actors/actors/builtin"
 	"github.com/ipfs/go-cid"
 	"github.com/p2p-org/mbelt-filecoin-streamer/config"
 	"github.com/p2p-org/mbelt-filecoin-streamer/services"
 	"github.com/p2p-org/mbelt-filecoin-streamer/services/messages"
 	"github.com/p2p-org/mbelt-filecoin-streamer/services/state"
 	"log"
+	"math/big"
 	"os"
 	"os/signal"
 	"sync"
 	"syscall"
+	"time"
 )
 
 const (
-	defaultHeight = 5000
-	batchCapacity = 20
+	defaultHeight       = 5000
+	batchCapacity       = 2
+	actorChangesWorkers = 2
 
 	// current event is current head. We receive it once right after subscription on head updates
 	HeadEventCurrent = "current"
@@ -91,11 +95,15 @@ func updateHeads(ctx context.Context) {
 	headUpdatesCtx, cancelHeadUpdates := context.WithCancel(ctx)
 	// Buffer is that big for channel to be able to store some head updates while we are syncing till "current" block
 	// TODO: This approach is not solid. Think how we can do it better.
-	headUpdates := make(chan []*api.HeadChange, 1000)
+	headUpdates := make(chan []*api.HeadChange, 5000)
 	services.App().BlocksService().GetHeadUpdates(headUpdatesCtx, &headUpdates)
 
 	for {
 		select {
+		case <-ctx.Done():
+			cancelHeadUpdates()
+			log.Println("[App][Debug][updateHeads]", "unsubscribed from head updates")
+			return
 		case update := <-headUpdates:
 			for _, hu := range update {
 				switch hu.Type {
@@ -113,24 +121,20 @@ func updateHeads(ctx context.Context) {
 					}
 					// Pushing block and its messages to kafka just in case.
 					// TODO: Duplicates should be handled on db's side
-					pushTipsetWithBlocksAndMessagesAndActorChanges(hu.Val)
+					collectAndPushOtherEntitiesByTipSet(hu.Val)
 
 				case HeadEventRevert:
 					services.App().TipSetsService().PushTipSetsToRevert(hu.Val)
 
 				case HeadEventApply:
-					pushTipsetWithBlocksAndMessagesAndActorChanges(hu.Val)
+					collectAndPushOtherEntitiesByTipSet(hu.Val)
 
 				default:
 					log.Println("[App][Debug][updateHeads]", "yet unknown event encountered:", hu.Type)
 					// Pushing just in case
-					pushTipsetWithBlocksAndMessagesAndActorChanges(hu.Val)
+					collectAndPushOtherEntitiesByTipSet(hu.Val)
 				}
 			}
-		case <-ctx.Done():
-			cancelHeadUpdates()
-			log.Println("[App][Debug][updateHeads]", "unsubscribed from head updates")
-			return
 		}
 	}
 }
@@ -140,6 +144,7 @@ func syncToHead(from int, ctx context.Context) {
 	if head != nil {
 		syncTo(from, int(head.Height()), ctx)
 	} else {
+		log.Println("Head is nil")
 		syncTo(from, 0, ctx)
 	}
 }
@@ -156,7 +161,6 @@ func syncTo(from int, to int, ctx context.Context) {
 	if startHeight <= 1 {
 		log.Println("getting genesis")
 		genesis := services.App().TipSetsService().GetGenesis()
-		log.Println(genesis.MarshalJSON())
 		services.App().TipSetsService().Push(genesis)
 		services.App().BlocksService().Push(genesis.Blocks())
 		services.App().MessagesService().Push(getBlockMessages(genesis.Blocks()))
@@ -172,11 +176,10 @@ func syncTo(from int, to int, ctx context.Context) {
 
 				go func(height abi.ChainEpoch) {
 					defer wg.Done()
-					_, tipSet, blocks, msgs, changes := syncForHeight(height)
-					services.App().TipSetsService().Push(tipSet)
-					services.App().BlocksService().Push(blocks)
-					services.App().MessagesService().Push(msgs)
-					services.App().StateService().PushActors(changes)
+					tipSet := syncTipSetForHeight(height)
+					if tipSet != nil {
+						collectAndPushOtherEntitiesByTipSet(tipSet)
+					}
 				}(height)
 
 				height++
@@ -189,28 +192,17 @@ func syncTo(from int, to int, ctx context.Context) {
 	}
 }
 
-func syncForHeight(height abi.ChainEpoch) (isHeightNotReached bool, tipSet *types.TipSet, blocks []*types.BlockHeader, extMessages []*messages.MessageExtended, changes []*state.ActorInfo) {
+func syncTipSetForHeight(height abi.ChainEpoch) *types.TipSet {
 	log.Println("[Datastore][Debug]", "Load height:", height)
 
-	tipSet, isHeightNotReached = services.App().TipSetsService().GetByHeight(height)
+	tipSet, isHeightNotReached := services.App().TipSetsService().GetByHeight(height)
 
 	if !isHeightNotReached {
 		log.Println("[App][Debug]", "Height reached")
-		return
+		return nil
 	}
 
-	// Empty TipSet, skipping
-	if tipSet == nil {
-		return
-	}
-
-	blocks = tipSet.Blocks()
-	extMessages = getBlockMessages(blocks)
-
-	// ignoring null rounds
-	changes, _ = collectActorChangesForBlocks(blocks)
-
-	return
+	return tipSet
 }
 
 func getBlockMessages(blocks []*types.BlockHeader) (msgs []*messages.MessageExtended) {
@@ -234,16 +226,26 @@ func getBlockMessages(blocks []*types.BlockHeader) (msgs []*messages.MessageExte
 	return msgs
 }
 
-func collectActorChanges(block *types.BlockHeader) (out []*state.ActorInfo, nullRounds []types.TipSetKey) {
-	//start := time.Now()
-	//defer func() {
-	//	log.Println("Collected Actor Changes", "duration", time.Since(start).String(), "len", len(out))
-	//}()
+// TODO: get list of miners every time this is called and check if addr is miner if it is so then collect it's info
+func collectActorChanges(block *types.BlockHeader) (out []*state.ActorInfo, nullRounds []types.TipSetKey,
+	minerInfo []*state.MinerInfo, minerSectors []*state.MinerSector, reward *state.RewardActor) {
 
-	parentTipSet := services.App().TipSetsService().GetByKey(types.NewTipSetKey(block.Parents...))
+	start := time.Now()
+	defer func() {
+		log.Println("Collected Actor Changes", "duration", time.Since(start).String(), "len", len(out))
+	}()
+
+	tsk := types.NewTipSetKey(block.Parents...)
+	miners := services.App().StateService().ListMiners(tsk)
+	minersMap := make(map[string]struct{}, len(miners))
+	for _, miner := range miners {
+		minersMap[miner.String()] = struct{}{}
+	}
+
+	parentTipSet := services.App().TipSetsService().GetByKey(tsk)
 	if parentTipSet == nil {
 		log.Println("[App][Debug][collectActorChanges] parent is nil. height: ", block.Height)
-		return nil, nil
+		return nil, nil, nil, nil, nil
 	}
 	if parentTipSet.ParentState().Equals(block.ParentStateRoot) {
 		nullRounds = append(nullRounds, parentTipSet.Key())
@@ -252,7 +254,7 @@ func collectActorChanges(block *types.BlockHeader) (out []*state.ActorInfo, null
 	// collect all actors that had state changes between the block's parent-state and its grandparent-state.
 	// TODO: changes will contain deleted actors, this causes needless processing further down the pipeline, consider
 	// a separate strategy for deleted actors
-	// (these comments as well as algorithm were copied from lotus/cmd/lotus-chainwatch/processor/processor.go)
+	// (these comments as well as basic logic were copied from lotus/cmd/lotus-chainwatch/processor/processor.go)
 	changes := services.App().StateService().GetChangedActors(parentTipSet.ParentState(), block.ParentStateRoot)
 
 	out = make([]*state.ActorInfo, 0, len(changes))
@@ -275,6 +277,28 @@ func collectActorChanges(block *types.BlockHeader) (out []*state.ActorInfo, null
 			continue
 		}
 
+		// miner info collection
+		if _, ok := minersMap[a]; ok {
+			info := services.App().StateService().GetMinerInfo(addr, tsk)
+			power := services.App().StateService().GetMinerPower(addr, tsk)
+			sectors := services.App().StateService().GetMinerSectors(addr, tsk)
+			minerInfo = append(minerInfo, &state.MinerInfo{
+				MinerInfo:  info,
+				MinerPower: power,
+				Miner:      addr,
+				Height:     block.Height,
+			})
+			for _, sector := range sectors {
+				minerSectors = append(minerSectors, &state.MinerSector{
+					SectorOnChainInfo: sector,
+					Miner:             addr,
+					Height:            block.Height,
+				})
+			}
+			// We can skip the rest of loop if we don't want miner's account states to be collected.
+			// continue
+		}
+
 		ast := services.App().StateService().ReadState(addr, parentTipSet.Key())
 
 		if ast == nil {
@@ -286,6 +310,19 @@ func collectActorChanges(block *types.BlockHeader) (out []*state.ActorInfo, null
 		if err != nil {
 			log.Println("[App][Error][collectActorChanges]", err)
 			continue
+		}
+
+		// parse reward
+		if addr == builtin.RewardActorAddr {
+			rewardState := parseRewardActorState(ast.State.(map[string]interface{}))
+			reward = &state.RewardActor{
+				Act:         act,
+				StateRoot:   block.ParentStateRoot,
+				TsKey:       parentTipSet.Key(),
+				ParentTsKey: parentTipSet.Parents(),
+				Addr:        addr,
+				State:       rewardState,
+			}
 		}
 
 		if _, ok := actorsSeen[act.Head]; !ok {
@@ -302,33 +339,134 @@ func collectActorChanges(block *types.BlockHeader) (out []*state.ActorInfo, null
 		actorsSeen[act.Head] = struct{}{}
 	}
 
-	return out, nullRounds
+	return
 }
 
-func collectActorChangesForBlocks(blocks []*types.BlockHeader) (changes []*state.ActorInfo, nullRrounds []types.TipSetKey) {
+func collectActorChangesForBlocks(blocks []*types.BlockHeader) (changes []*state.ActorInfo, nullRounds []types.TipSetKey,
+	minerInfo []*state.MinerInfo, minerSectors []*state.MinerSector, rewardStates []*state.RewardActor) {
 	wg := sync.WaitGroup{}
-	for _, block := range blocks {
-		// collecting changes async five blocks at a time
-		for i := 0; i < 5; i++ {
+	lenBlocks := len(blocks)
+	for l := 0; l < lenBlocks; l += actorChangesWorkers {
+		var bulk []*types.BlockHeader
+		if l <= lenBlocks - actorChangesWorkers {
+			bulk = blocks[l:l+actorChangesWorkers]
+		} else {
+			bulk = blocks[l:]
+		}
+
+		for _, block := range bulk {
 			go func() {
 				wg.Add(1)
-				blockChanges, blockNullRounds := collectActorChanges(block)
+				blockChanges, blockNullRounds, blockMinerInfo, blockMinerSectors, blockReward := collectActorChanges(block)
 				changes = append(changes, blockChanges...)
-				nullRrounds = append(nullRrounds, blockNullRounds...)
+				nullRounds = append(nullRounds, blockNullRounds...)
+				minerInfo = append(minerInfo, blockMinerInfo...)
+				minerSectors = append(minerSectors, blockMinerSectors...)
+				rewardStates = append(rewardStates, blockReward)
 				wg.Done()
 			}()
 		}
 		wg.Wait()
+
 	}
 
 	return
 }
 
-func pushTipsetWithBlocksAndMessagesAndActorChanges(tipset *types.TipSet) {
+func parseRewardActorState(stateMap map[string]interface{}) *state.RewardActorState {
+	cumsumBaseline, cumsumRealized, effectiveBaselinePower, thisEpochBaselinePower, thisEpochReward, totalMined,
+	simpleTotal, baselineTotal, totalStoragePowerReward, positionEstimate, velocityEstimate := new(big.Int),
+	new(big.Int), new(big.Int), new(big.Int), new(big.Int), new(big.Int), new(big.Int), new(big.Int), new(big.Int),
+	new(big.Int), new(big.Int)
+
+	var effectiveNetworkTime int = 0
+	var epoch abi.ChainEpoch = 0
+
+	if v, ok := stateMap["EffectiveNetworkTime"]; ok {
+		switch v.(type) {
+		case float64:
+			effectiveNetworkTime = int(v.(float64))
+		case int, int64, int32:
+			effectiveNetworkTime = v.(int)
+		}
+
+	}
+	if v, ok := stateMap["Epoch"]; ok {
+		switch v.(type) {
+		case float64:
+			epoch = abi.ChainEpoch(v.(float64))
+		case int, int64, int32, abi.ChainEpoch:
+			epoch = v.(abi.ChainEpoch)
+		}
+
+	}
+
+	if v, ok := stateMap["CumsumBaseline"]; ok {
+		cumsumBaseline, _ = cumsumBaseline.SetString(v.(string), 10)
+	}
+	if v, ok := stateMap["CumsumRealized"]; ok {
+		cumsumRealized, _ = cumsumRealized.SetString(v.(string), 10)
+	}
+	if v, ok := stateMap["EffectiveBaselinePower"]; ok {
+		effectiveBaselinePower, _ = effectiveBaselinePower.SetString(v.(string), 10)
+	}
+	if v, ok := stateMap["ThisEpochBaselinePower"]; ok {
+		thisEpochBaselinePower, _ = thisEpochBaselinePower.SetString(v.(string), 10)
+	}
+	if v, ok := stateMap["ThisEpochReward"]; ok {
+		thisEpochReward, _ = thisEpochReward.SetString(v.(string), 10)
+	}
+	if v, ok := stateMap["SimpleTotal"]; ok {
+		simpleTotal, _ = simpleTotal.SetString(v.(string), 10)
+	}
+	if v, ok := stateMap["BaselineTotal"]; ok {
+		baselineTotal, _ = baselineTotal.SetString(v.(string), 10)
+	}
+	if v, ok := stateMap["TotalStoragePowerReward"]; ok {
+		totalStoragePowerReward, _ = totalStoragePowerReward.SetString(v.(string), 10)
+	}
+
+	if m, ok := stateMap["ThisEpochRewardSmoothed"]; ok {
+		thisEpochRewardSmoothed := m.(map[string]interface{})
+		if v, ok := thisEpochRewardSmoothed["PositionEstimate"]; ok {
+			positionEstimate, _ = positionEstimate.SetString(v.(string), 10)
+		}
+		if v, ok := thisEpochRewardSmoothed["VelocityEstimate"]; ok {
+			velocityEstimate, _ = velocityEstimate.SetString(v.(string), 10)
+		}
+	}
+
+	if _, ok := stateMap["TotalMined"]; ok {
+		totalMined, _ = totalMined.SetString(stateMap["TotalMined"].(string), 10)
+	}
+
+	return &state.RewardActorState{
+		CumsumBaseline:                          *cumsumBaseline,
+		CumsumRealized:                          *cumsumRealized,
+		EffectiveBaselinePower:                  *effectiveBaselinePower,
+		EffectiveNetworkTime:                    effectiveNetworkTime,
+		Epoch:                                   epoch,
+		ThisEpochBaselinePower:                  *thisEpochBaselinePower,
+		ThisEpochReward:                         *thisEpochReward,
+		TotalMined:                              *totalMined,
+		SimpleTotal:                             *simpleTotal,
+		BaselineTotal:                           *baselineTotal,
+		TotalStoragePowerReward:                 *totalStoragePowerReward,
+		ThisEpochRewardSmoothedPositionEstimate: *positionEstimate,
+		ThisEpochRewardSmoothedVelocityEstimate: *velocityEstimate,
+	}
+}
+
+func collectAndPushOtherEntitiesByTipSet(tipset *types.TipSet) {
 	blocks := tipset.Blocks()
 	services.App().TipSetsService().Push(tipset)
 	services.App().BlocksService().Push(blocks)
 	services.App().MessagesService().Push(getBlockMessages(blocks))
-	changes, _ := collectActorChangesForBlocks(blocks)
+
+	// ignoring null rounds
+	changes, _, minersInfo, minersSectors, rewardStates := collectActorChangesForBlocks(blocks)
 	services.App().StateService().PushActors(changes)
+	services.App().StateService().PushMinersInfo(minersInfo)
+	services.App().StateService().PushMinersSectors(minersSectors)
+	services.App().StateService().PushRewardActorStates(rewardStates)
 }

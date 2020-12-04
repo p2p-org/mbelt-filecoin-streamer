@@ -1,4 +1,12 @@
 version: '3'
+x-redash-environment: &redash-environment
+  REDASH_LOG_LEVEL: "INFO"
+  REDASH_REDIS_URL: redis://redis:6379/0
+  REDASH_DATABASE_URL: postgres://sink:Ekj31R2_03S2IwLoPsWVa28_sMx_xoS@db:5432/raw
+  REDASH_RATELIMIT_ENABLED: "false"
+  REDASH_MAIL_DEFAULT_SENDER: "redash@p2p.org"
+  REDASH_MAIL_SERVER: email
+  REDASH_ENFORCE_CSRF: "true"
 services:
   zookeeper:
     image: confluentinc/cp-zookeeper:5.5.2
@@ -199,10 +207,10 @@ services:
 
   graphile:
     image: graphile/postgraphile
-    command: --subscriptions --dynamic-json --no-setof-functions-contain-nulls --no-ignore-rbac --show-error-stack=json --graphiql "/"  --export-schema-graphql schema.graphql --enable-query-batching --legacy-relations omit --schema graphql --watch
+    command: --subscriptions --dynamic-json --no-setof-functions-contain-nulls --no-ignore-rbac --show-error-stack=json --graphiql "/"  --export-schema-graphql schema.graphql --enable-query-batching --legacy-relations omit --schema graphql --port 5050 --watch
     restart: on-failure
     ports:
-      - "5000:5000"
+      - "5050:5050"
     links:
       - db
     depends_on:
@@ -223,9 +231,9 @@ services:
       - connect
       - ksqldb-server
     environment:
-      MBELT_FILECOIN_STREAMER_API_URL: http://116.203.240.62:1234/rpc/v0
-      MBELT_FILECOIN_STREAMER_API_WS_URL: ws://116.203.240.62:1234/rpc/v0
-      MBELT_FILECOIN_STREAMER_API_TOKEN:
+      MBELT_FILECOIN_STREAMER_API_URL: ${MBELT_FILECOIN_STREAMER_API_URL}
+      MBELT_FILECOIN_STREAMER_API_WS_URL: ${MBELT_FILECOIN_STREAMER_API_WS_URL}
+      MBELT_FILECOIN_STREAMER_API_TOKEN: ${MBELT_FILECOIN_STREAMER_API_TOKEN}
       MBELT_FILECOIN_STREAMER_KAFKA: broker:9092
       MBELT_FILECOIN_STREAMER_PG_URL: postgres://db:5432/raw?user=sink&password=Ekj31R2_03S2IwLoPsWVa28_sMx_xoS&sslmode=disable
 
@@ -237,3 +245,39 @@ services:
       - db
     environment:
       PG_URL: postgres://db:5432/raw?user=sink&password=Ekj31R2_03S2IwLoPsWVa28_sMx_xoS&sslmode=disable
+
+  redash-server:
+    image: redash/redash:latest
+    command: dev_server
+    depends_on:
+      - db
+      - redis
+    ports:
+      - "5000:5000"
+      - "5678:5678"
+    environment:
+      <<: *redash-environment
+      PYTHONUNBUFFERED: 0
+  redash-scheduler:
+    image: redash/redash:latest
+    command: dev_scheduler
+    depends_on:
+      - redash-server
+    environment:
+      <<: *redash-environment
+  redash-worker:
+    image: redash/redash:latest
+    command: dev_worker
+    depends_on:
+      - redash-server
+    environment:
+      <<: *redash-environment
+      PYTHONUNBUFFERED: 0
+  redis:
+    image: redis:3.0-alpine
+    restart: unless-stopped
+  email:
+    image: djfarrelly/maildev
+    ports:
+      - "1080:80"
+    restart: unless-stopped
