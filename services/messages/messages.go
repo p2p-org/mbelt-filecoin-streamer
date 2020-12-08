@@ -53,7 +53,9 @@ func (s *MessagesService) Push(messages []*MessageExtended) {
 	m := map[string]interface{}{}
 
 	for _, message := range messages {
-		m[message.Message.Cid().String()] = serializeMessage(message)
+		if message != nil {
+			m[message.Message.Cid().String()] = serializeMessage(message)
+		}
 	}
 
 	s.ds.Push(datastore.TopicMessages, m)

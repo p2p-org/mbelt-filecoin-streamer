@@ -1,5 +1,5 @@
 #!/bin/bash
-docker-compose up -d --force-recreate zookeeper broker
+docker-compose up -d --force-recreate --renew-anon-volumes zookeeper broker
 
 docker-compose exec broker kafka-topics --create --bootstrap-server localhost:9092 --replication-factor 1 --partitions 1 --topic blocks_stream
 docker-compose exec broker kafka-topics --create --bootstrap-server localhost:9092 --replication-factor 1 --partitions 1 --topic messages_stream
@@ -13,7 +13,7 @@ docker-compose exec broker kafka-topics --create --bootstrap-server localhost:90
 docker-compose up -d --force-recreate schema-registry connect control-center ksqldb-server ksqldb-cli ksql-datagen rest-proxy db redis email redash-server redash-scheduler redash-worker
 
 echo "Waiting for ksql containers..."
-/bin/sleep 180 # we should wait a little bit. Don't know why, but sleep 3m doesn't work on macOS but sleep 180 works just right and does the same thing
+/bin/sleep 210 # we should wait a little bit. Don't know why, but sleep 3m 30 doesn't work on macOS but sleep 210 works just right and does the same thing
 
 curl -X "POST" "http://localhost:8088/ksql" \
      -H "Content-Type: application/vnd.ksql.v1+json; charset=utf-8" \
@@ -34,7 +34,7 @@ curl 'http://localhost:5000/setup' \
   -H 'Content-Type: application/x-www-form-urlencoded' \
   -H 'Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.9' \
   --cookie-jar cookies.txt \
-  --data-raw 'name=admin&email=admin%40p2p.org&password=admin&security_notifications=y&org_name=p2p' \
+  --data-raw 'name=admin&email=admin%40p2p.org&password=supersecret123&security_notifications=y&org_name=p2p' \
   --compressed
 
 #curl 'http://localhost:5000/api/data_sources' \

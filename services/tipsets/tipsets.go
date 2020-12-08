@@ -8,12 +8,24 @@ import (
 	"github.com/p2p-org/mbelt-filecoin-streamer/datastore"
 	"github.com/p2p-org/mbelt-filecoin-streamer/datastore/utils"
 	"log"
+	"math/big"
+)
+
+const (
+	StateNormal uint8 = iota
+	StateNull
+	StateInProgress
 )
 
 type TipSetsService struct {
 	config *config.Config
 	ds     *datastore.KafkaDatastore
 	api    *client.APIClient
+}
+
+type TipSetWithState struct {
+	*types.TipSet
+	State uint8
 }
 
 func Init(config *config.Config, ds *datastore.KafkaDatastore, apiClient *client.APIClient) (*TipSetsService, error) {
@@ -40,18 +52,22 @@ func (s *TipSetsService) GetByKey(key types.TipSetKey) *types.TipSet {
 	return s.api.GetByKey(key)
 }
 
-func (s *TipSetsService) PushTipSetsToRevert(blocks *types.TipSet) {
-	s.push(datastore.TopicTipsetsToRevert, blocks)
+func (s *TipSetsService) PushTipSetsToRevert(tipset *TipSetWithState) {
+	s.push(datastore.TopicTipsetsToRevert, tipset)
 }
 
-func (s *TipSetsService) Push(tipset *types.TipSet) {
+func (s *TipSetsService) Push(tipset *TipSetWithState) {
 	s.push(datastore.TopicTipSets, tipset)
 }
 
-func (s *TipSetsService) push(topic string, tipset *types.TipSet) {
+func (s *TipSetsService) PushNormalState(tipset *types.TipSet) {
+	s.push(datastore.TopicTipSets, &TipSetWithState{tipset, StateNormal})
+}
+
+func (s *TipSetsService) push(topic string, tipset *TipSetWithState) {
 	defer func() {
 		if r := recover(); r != nil {
-			log.Println("[MessagesService][Recover]", "Throw panic", r)
+			log.Println("[TipSetsService][Recover]", "Throw panic", r)
 		}
 	}()
 
@@ -62,14 +78,25 @@ func (s *TipSetsService) push(topic string, tipset *types.TipSet) {
 	s.ds.Push(topic, m)
 }
 
-func serializeTipSet(tipset *types.TipSet) map[string]interface{} {
+func serializeTipSet(tipset *TipSetWithState) map[string]interface{} {
+	parentWeight, parentState, minTimestamp, blocks, parents := new(big.Int), "", uint64(0), "{}", "{}"
+
+	if tipset.State != StateNull {
+		parentWeight = tipset.ParentWeight().Int
+		parentState = tipset.ParentState().String()
+		minTimestamp = tipset.MinTimestamp()
+		blocks = utils.CidsToVarcharArray(tipset.Cids())
+		parents = utils.CidsToVarcharArray(tipset.Parents().Cids())
+	}
+
 	result := map[string]interface{}{
 		"height":        tipset.Height(),
-		"parent_weight": tipset.ParentWeight(),
-		"parent_state":  tipset.ParentState().String(),
-		"min_timestamp": tipset.MinTimestamp(),
-		"blocks":        utils.CidsToVarcharArray(tipset.Cids()),
-		"parents":       utils.CidsToVarcharArray(tipset.Parents().Cids()),
+		"parent_weight": parentWeight,
+		"parent_state":  parentState,
+		"min_timestamp": minTimestamp,
+		"blocks":        blocks,
+		"parents":       parents,
+		"state":         tipset.State,
 	}
 
 	return result

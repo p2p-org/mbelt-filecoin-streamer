@@ -18,7 +18,7 @@ const (
 	TopicActorStates       = "actor_states_stream"
 	TopicMinerInfos        = "miner_infos_stream"
 	TopicMinerSectors      = "miner_sectors_stream"
-	TopicRewardActorStates = "actor_states_stream"
+	TopicRewardActorStates = "reward_actor_states_stream"
 )
 
 type KafkaDatastore struct {

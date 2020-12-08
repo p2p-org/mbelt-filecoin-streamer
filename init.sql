@@ -23,7 +23,7 @@ CREATE TABLE IF NOT EXISTS filecoin.messages
     "method"     INT,
     "from"       VARCHAR(256),
     "to"         VARCHAR(256),
-    "value"      BIGINT,
+    "value"      DECIMAL(100, 0),
     "gas"        JSONB,
     "params"     TEXT,
     "data"       JSONB,
@@ -37,31 +37,33 @@ CREATE TABLE IF NOT EXISTS filecoin.tipsets
     "parent_weight" BIGINT,
     "parent_state"  VARCHAR,
     "blocks"        VARCHAR(256)[],
-    "min_timestamp" TIMESTAMP
+    "min_timestamp" TIMESTAMP,
+    "state"         SMALLINT
 );
 
 CREATE TABLE IF NOT EXISTS filecoin.actor_states
 (
-    "actor_state_key"  VARCHAR(256) NOT NULL PRIMARY KEY,
-    "actor_code"       VARCHAR(256),
+    "actor_state_key"  VARCHAR(512) NOT NULL PRIMARY KEY,
+    "actor_code"       VARCHAR(512),
     "actor_head"       VARCHAR(256),
-    "nonce"            BIGINT,
-    "balance"          BIGINT,
+    "nonce"            DECIMAL(100, 0),
+    "balance"          DECIMAL(100, 0),
     "state_root"       VARCHAR(256),
     "height"           BIGINT,
-    "ts_key"           VARCHAR(256),
-    "parent_ts_key"    VARCHAR(256),
-    "addr"             VARCHAR(256),
-    "state"            JSONB
+    "ts_key"           TEXT,
+    "parent_ts_key"    TEXT,
+    "addr"             VARCHAR(128),
+    "state"            JSONB,
+    "deleted"          BOOLEAN
 );
 
 CREATE TABLE IF NOT EXISTS filecoin.miner_infos (
-  "miner_info_key"                VARCHAR(256) NOT NULL PRIMARY KEY,
-  "miner"                         VARCHAR(256),
-  "owner"                         VARCHAR(256),
-  "worker"                        VARCHAR(256),
-  "control_addresses"             VARCHAR(256)[],
-  "new_worker_address"            VARCHAR(256),
+  "miner_info_key"                VARCHAR(512) NOT NULL PRIMARY KEY,
+  "miner"                         VARCHAR(128),
+  "owner"                         VARCHAR(128),
+  "worker"                        VARCHAR(128),
+  "control_addresses"             VARCHAR(128)[],
+  "new_worker_address"            VARCHAR(128),
   "new_worker_effective_at"       BIGINT,
   "peer_id"                       VARCHAR(256),
   "multiaddrs"                    VARCHAR(256)[],
@@ -76,44 +78,44 @@ CREATE TABLE IF NOT EXISTS filecoin.miner_infos (
 );
 
 CREATE TABLE IF NOT EXISTS filecoin.miner_sectors (
-  "miner_sector_key"        VARCHAR(256) NOT NULL PRIMARY KEY,
+  "miner_sector_key"        VARCHAR(512) NOT NULL PRIMARY KEY,
   "sector_number"           BIGINT,
   "seal_proof"              INT,
   "sealed_cid"              VARCHAR(256),
   "deal_ids"                INT[],
-  "activation"              BIGINT,
-  "expiration"              BIGINT,
-  "deal_weight"             BIGINT,
-  "verified_deal_weight"    BIGINT,
-  "initial_pledge"          BIGINT,
-  "expected_day_reward"     BIGINT,
-  "expected_storage_pledge" BIGINT,
-  "miner"                   VARCHAR(256),
+  "activation"              DECIMAL(100, 0),
+  "expiration"              DECIMAL(100, 0),
+  "deal_weight"             DECIMAL(100, 0),
+  "verified_deal_weight"    DECIMAL(100, 0),
+  "initial_pledge"          DECIMAL(100, 0),
+  "expected_day_reward"     DECIMAL(100, 0),
+  "expected_storage_pledge" DECIMAL(100, 0),
+  "miner"                   VARCHAR(128),
   "height"                  BIGINT
 );
 
 CREATE TABLE IF NOT EXISTS filecoin.reward_actor_states (
   "epoch"                                        BIGINT NOT NULL PRIMARY KEY,
-  "actor_code"                                   VARCHAR(256),
+  "actor_code"                                   VARCHAR(512),
   "actor_head"                                   VARCHAR(256),
-  "nonce"                                        BIGINT,
-  "balance"                                      BIGINT,
+  "nonce"                                        DECIMAL(100, 0),
+  "balance"                                      DECIMAL(100, 0),
   "state_root"                                   VARCHAR(256),
-  "ts_key"                                       VARCHAR(256),
-  "parent_ts_key"                                VARCHAR(256),
-  "addr"                                         VARCHAR(256),
-  "cumsum_baseline"                              BIGINT,
-  "cumsum_realized"                              BIGINT,
-  "effective_baseline_power"                     BIGINT,
+  "ts_key"                                       TEXT,
+  "parent_ts_key"                                TEXT,
+  "addr"                                         VARCHAR(128),
+  "cumsum_baseline"                              DECIMAL(100, 0),
+  "cumsum_realized"                              DECIMAL(100, 0),
+  "effective_baseline_power"                     DECIMAL(100, 0),
   "effective_network_time"                       INT,
-  "this_epoch_baseline_power"                    BIGINT,
-  "this_epoch_reward"                            BIGINT,
-  "total_mined"                                  BIGINT,
-  "simple_total"                                 BIGINT,
-  "baseline_total"                               BIGINT,
-  "total_storage_power_reward"                   BIGINT,
-  "this_epoch_reward_smoothed_position_estimate" BIGINT,
-  "this_epoch_reward_smoothed_velocity_estimate" BIGINT
+  "this_epoch_baseline_power"                    DECIMAL(100, 0),
+  "this_epoch_reward"                            DECIMAL(100, 0),
+  "total_mined"                                  DECIMAL(100, 0),
+  "simple_total"                                 DECIMAL(100, 0),
+  "baseline_total"                               DECIMAL(100, 0),
+  "total_storage_power_reward"                   DECIMAL(100, 0),
+  "this_epoch_reward_smoothed_position_estimate" DECIMAL(100, 0),
+  "this_epoch_reward_smoothed_velocity_estimate" DECIMAL(100, 0)
 );
 
 -- Fix for unquoting varchar json
@@ -158,49 +160,52 @@ CREATE TABLE IF NOT EXISTS filecoin._messages
 
 CREATE TABLE IF NOT EXISTS filecoin._tipsets
 (
-    "height"        BIGINT NOT NULL PRIMARY KEY,
+    "height"        TEXT NOT NULL PRIMARY KEY,
     "parents"       TEXT,
     "parent_weight" TEXT,
     "parent_state"  VARCHAR,
     "blocks"        TEXT,
-    "min_timestamp" BIGINT
+    "min_timestamp" BIGINT,
+    "state"         SMALLINT
 );
 
 CREATE TABLE IF NOT EXISTS filecoin._tipsets_to_revert
 (
-    "height"        BIGINT NOT NULL PRIMARY KEY,
+    "height"        TEXT NOT NULL PRIMARY KEY,
     "parents"       VARCHAR(256)[],
     "parent_weight" TEXT,
     "parent_state"  VARCHAR,
     "blocks"        VARCHAR(256)[],
-    "min_timestamp" TIMESTAMP
+    "min_timestamp" TIMESTAMP,
+    "state"         SMALLINT
 );
 
 CREATE TABLE IF NOT EXISTS filecoin._actor_states
 (
-    "actor_state_key"  VARCHAR(256) NOT NULL PRIMARY KEY,
+    "actor_state_key"  VARCHAR(512) NOT NULL PRIMARY KEY,
     "actor_code"       VARCHAR(256),
     "actor_head"       VARCHAR(256),
     "nonce"            TEXT,
     "balance"          TEXT,
     "state_root"       VARCHAR(256),
     "height"           TEXT,
-    "ts_key"           VARCHAR(256),
-    "parent_ts_key"    VARCHAR(256),
-    "addr"             VARCHAR(256),
-    "state"            TEXT
+    "ts_key"           TEXT,
+    "parent_ts_key"    TEXT,
+    "addr"             VARCHAR(128),
+    "state"            TEXT,
+    "deleted"          BOOLEAN
 );
 
 CREATE TABLE IF NOT EXISTS filecoin._miner_infos (
-    "miner_info_key"                VARCHAR(256) NOT NULL PRIMARY KEY,
-    "miner"                         VARCHAR(256),
-    "owner"                         VARCHAR(256),
-    "worker"                        VARCHAR(256),
-    "control_addresses"             VARCHAR(256)[],
-    "new_worker_address"            VARCHAR(256),
+    "miner_info_key"                VARCHAR(512) NOT NULL PRIMARY KEY,
+    "miner"                         VARCHAR(128),
+    "owner"                         VARCHAR(128),
+    "worker"                        VARCHAR(128),
+    "control_addresses"             TEXT,
+    "new_worker_address"            VARCHAR(128),
     "new_worker_effective_at"       TEXT,
     "peer_id"                       VARCHAR(256),
-    "multiaddrs"                    VARCHAR(256)[],
+    "multiaddrs"                    TEXT,
     "seal_proof_type"               INT,
     "sector_size"                   TEXT,
     "window_post_partition_sectors" TEXT,
@@ -212,11 +217,11 @@ CREATE TABLE IF NOT EXISTS filecoin._miner_infos (
 );
 
 CREATE TABLE IF NOT EXISTS filecoin._miner_sectors (
-    "miner_sector_key"        VARCHAR(256) NOT NULL PRIMARY KEY,
+    "miner_sector_key"        VARCHAR(512) NOT NULL PRIMARY KEY,
     "sector_number"           TEXT,
     "seal_proof"              INT,
     "sealed_cid"              VARCHAR(256),
-    "deal_ids"                INT[],
+    "deal_ids"                TEXT,
     "activation"              TEXT,
     "expiration"              TEXT,
     "deal_weight"             TEXT,
@@ -224,20 +229,20 @@ CREATE TABLE IF NOT EXISTS filecoin._miner_sectors (
     "initial_pledge"          TEXT,
     "expected_day_reward"     TEXT,
     "expected_storage_pledge" TEXT,
-    "miner"                   VARCHAR(256),
+    "miner"                   VARCHAR(128),
     "height"                  TEXT
 );
 
 CREATE TABLE IF NOT EXISTS filecoin._reward_actor_states (
-    "epoch"                                        BIGINT NOT NULL PRIMARY KEY,
-    "actor_code"                                   VARCHAR(256),
+    "epoch"                                        TEXT NOT NULL PRIMARY KEY,
+    "actor_code"                                   VARCHAR(512),
     "actor_head"                                   VARCHAR(256),
     "nonce"                                        TEXT,
     "balance"                                      TEXT,
     "state_root"                                   VARCHAR(256),
-    "ts_key"                                       VARCHAR(256),
-    "parent_ts_key"                                VARCHAR(256),
-    "addr"                                         VARCHAR(256),
+    "ts_key"                                       TEXT,
+    "parent_ts_key"                                TEXT,
+    "addr"                                         VARCHAR(128),
     "cumsum_baseline"                              TEXT,
     "cumsum_realized"                              TEXT,
     "effective_baseline_power"                     TEXT,
@@ -371,7 +376,7 @@ BEGIN
             NEW."method",
             NEW."from",
             NEW."to",
-            NEW."value"::BIGINT,
+            NEW."value"::DECIMAL(100, 0),
             NEW."gas"::jsonb,
             NEW."params",
             NEW."data"::jsonb,
@@ -421,13 +426,15 @@ BEGIN
                                  "parent_weight",
                                  "parent_state",
                                  "blocks",
-                                 "min_timestamp")
-    VALUES (NEW."height",
-            NEW."parents"::varchar(256)[],
+                                 "min_timestamp",
+                                 "state")
+    VALUES (NEW."height"::BIGINT,
+            NEW."parents"::VARCHAR(256)[],
             NEW."parent_weight"::BIGINT,
             NEW."parent_state",
-            NEW."blocks"::varchar(256)[],
-            to_timestamp(NEW."min_timestamp"))
+            NEW."blocks"::VARCHAR(256)[],
+            to_timestamp(NEW."min_timestamp"),
+            NEW."state")
     ON CONFLICT DO NOTHING;
 
     RETURN NEW;
@@ -477,18 +484,20 @@ BEGIN
                                 "ts_key",
                                 "parent_ts_key",
                                 "addr",
-                                "state")
+                                "state",
+                                "deleted")
     VALUES (NEW."actor_state_key",
             NEW."actor_code",
             NEW."actor_head",
-            NEW."nonce"::BIGINT,
-            NEW."balance"::BIGINT,
+            NEW."nonce"::DECIMAL(100, 0),
+            NEW."balance"::DECIMAL(100, 0),
             NEW."state_root",
             NEW."height"::BIGINT,
             NEW."ts_key",
             NEW."parent_ts_key",
             NEW."addr",
-            NEW."state"::jsonb)
+            NEW."state"::jsonb,
+            NEW."deleted")
     ON CONFLICT DO NOTHING;
 
     RETURN NEW;
@@ -547,18 +556,18 @@ BEGIN
             NEW."miner",
             NEW."owner",
             NEW."worker",
-            NEW."control_addresses",
+            NEW."control_addresses"::VARCHAR(128)[],
             NEW."new_worker_address",
             NEW."new_worker_effective_at"::BIGINT,
             NEW."peer_id",
-            NEW."multiaddrs",
+            NEW."multiaddrs"::VARCHAR(256)[],
             NEW."seal_proof_type",
-            NEW."sector_size"::BIGINT,
-            NEW."window_post_partition_sectors"::BIGINT,
-            NEW."miner_raw_byte_power"::BIGINT,
-            NEW."miner_quality_adj_power"::BIGINT,
-            NEW."total_raw_byte_power"::BIGINT,
-            NEW."total_quality_adj_power"::BIGINT,
+            NEW."sector_size"::DECIMAL(100, 0),
+            NEW."window_post_partition_sectors"::DECIMAL(100, 0),
+            NEW."miner_raw_byte_power"::DECIMAL(100, 0),
+            NEW."miner_quality_adj_power"::DECIMAL(100, 0),
+            NEW."total_raw_byte_power"::DECIMAL(100, 0),
+            NEW."total_quality_adj_power"::DECIMAL(100, 0),
             NEW."height"::BIGINT)
     ON CONFLICT DO NOTHING;
 
@@ -615,14 +624,14 @@ BEGIN
             NEW."sector_number"::BIGINT,
             NEW."seal_proof",
             NEW."sealed_cid",
-            NEW."deal_ids",
-            NEW."activation"::BIGINT,
-            NEW."expiration"::BIGINT,
-            NEW."deal_weight"::BIGINT,
-            NEW."verified_deal_weight"::BIGINT,
-            NEW."initial_pledge"::BIGINT,
-            NEW."expected_day_reward"::BIGINT,
-            NEW."expected_storage_pledge"::BIGINT,
+            NEW."deal_ids"::INT[],
+            NEW."activation"::DECIMAL(100, 0),
+            NEW."expiration"::DECIMAL(100, 0),
+            NEW."deal_weight"::DECIMAL(100, 0),
+            NEW."verified_deal_weight"::DECIMAL(100, 0),
+            NEW."initial_pledge"::DECIMAL(100, 0),
+            NEW."expected_day_reward"::DECIMAL(100, 0),
+            NEW."expected_storage_pledge"::DECIMAL(100, 0),
             NEW."miner",
             NEW."height"::BIGINT)
     ON CONFLICT DO NOTHING;
@@ -683,27 +692,27 @@ BEGIN
                                              total_storage_power_reward,
                                              this_epoch_reward_smoothed_position_estimate,
                                              this_epoch_reward_smoothed_velocity_estimate)
-    VALUES (NEW."epoch",
+    VALUES (NEW."epoch"::BIGINT,
             NEW."actor_code",
             NEW."actor_head",
-            NEW."nonce"::BIGINT,
-            NEW."balance"::BIGINT,
+            NEW."nonce"::DECIMAL(100, 0),
+            NEW."balance"::DECIMAL(100, 0),
             NEW."state_root",
             NEW."ts_key",
             NEW."parent_ts_key",
             NEW."addr",
-            NEW."cumsum_baseline"::BIGINT,
-            NEW."cumsum_realized"::BIGINT,
-            NEW."effective_baseline_power"::BIGINT,
+            NEW."cumsum_baseline"::DECIMAL(100, 0),
+            NEW."cumsum_realized"::DECIMAL(100, 0),
+            NEW."effective_baseline_power"::DECIMAL(100, 0),
             NEW."effective_network_time",
-            NEW."this_epoch_baseline_power"::BIGINT,
-            NEW."this_epoch_reward"::BIGINT,
-            NEW."total_mined"::BIGINT,
-            NEW."simple_total"::BIGINT,
-            NEW."baseline_total"::BIGINT,
-            NEW."total_storage_power_reward"::BIGINT,
-            NEW."this_epoch_reward_smoothed_position_estimate"::BIGINT,
-            NEW."this_epoch_reward_smoothed_velocity_estimate"::BIGINT)
+            NEW."this_epoch_baseline_power"::DECIMAL(100, 0),
+            NEW."this_epoch_reward"::DECIMAL(100, 0),
+            NEW."total_mined"::DECIMAL(100, 0),
+            NEW."simple_total"::DECIMAL(100, 0),
+            NEW."baseline_total"::DECIMAL(100, 0),
+            NEW."total_storage_power_reward"::DECIMAL(100, 0),
+            NEW."this_epoch_reward_smoothed_position_estimate"::DECIMAL(100, 0),
+            NEW."this_epoch_reward_smoothed_velocity_estimate"::DECIMAL(100, 0))
     ON CONFLICT DO NOTHING;
 
     RETURN NEW;

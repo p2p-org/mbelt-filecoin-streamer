@@ -49,7 +49,9 @@ func (s *BlocksService) Push(blocks []*types.BlockHeader) {
 	m := map[string]interface{}{}
 
 	for _, block := range blocks {
-		m[block.Cid().String()] = serializeHeader(block)
+		if block != nil {
+			m[block.Cid().String()] = serializeHeader(block)
+		}
 	}
 
 	s.kafkaDs.Push(datastore.TopicBlocks, m)

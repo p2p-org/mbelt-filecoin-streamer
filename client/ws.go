@@ -13,8 +13,10 @@ import (
 )
 
 const (
-	jsonRPCVersion   = "2.0"
-	wsRequestTimeout = 60 * time.Second
+	jsonRPCVersion    = "2.0"
+	wsRequestTimeout  = 60 * time.Second
+	maxRequestRetries = 5
+	maxDialReties     = 10
 )
 
 type RPCClient struct {
@@ -43,12 +45,24 @@ func NewClient(url string) (c *RPCClient, err error) {
 		Proxy: http.ProxyFromEnvironment,
 		HandshakeTimeout: 100 * time.Second,
 	}
-	c.conn, _, err = dialer.Dial(url, nil)
-	if err != nil {
-		panic(fmt.Sprintf("Couldn't connect to lotus ws url. err: %s", err))
-	}
+	dialWithRetry(dialer, url, 0)
 
 	return c, nil
+}
+
+func dialWithRetry(dialer *websocket.Dialer, url string, retryCount int) (conn *websocket.Conn) {
+	conn, _, err := dialer.Dial(url, nil)
+	if err != nil {
+		if retryCount < maxDialReties {
+			retryCount++
+			log.Println("[RPCCient][Debug][Dial]", "Couldn't dial to lotus ws url. err:", err, "Attempting retry number", retryCount)
+			dialWithRetry(dialer, url, retryCount)
+		} else {
+			panic(fmt.Sprintf("Couldn't dial to lotus ws url despite %d retries. err: %s", maxDialReties, err))
+		}
+	}
+
+	return conn
 }
 
 func (c *RPCClient) getNextId() uint64 {
@@ -127,6 +141,10 @@ func (c *RPCClient) Subscribe(method string, params []interface{}, consumer *cha
 }
 
 func (c *RPCClient) Do(method string, params []interface{}, dst interface{}) error {
+	return c.do(method, params, dst, 0)
+}
+
+func (c *RPCClient) do(method string, params []interface{}, dst interface{}, retryCount int) error {
 	request := &Request{
 		Id:      c.getNextId(),
 		Version: jsonRPCVersion,
@@ -155,10 +173,24 @@ func (c *RPCClient) Do(method string, params []interface{}, dst interface{}) err
 
 	select {
 	case err := <-errChan:
-		return err
+		if retryCount < maxRequestRetries {
+			retryCount++
+			log.Println("[RPCClient][Debug][do]", "Received error on method", method, "err:", err, "Attempting retry number", retryCount)
+			return c.do(method, params, dst, retryCount)
+		}
+
+		return fmt.Errorf("couldn't receive correct response on method %s after %d retries. err: %s", method, maxRequestRetries, err)
+
 	case res := <-resChan:
 		return json.Unmarshal(res, &dst)
+
 	case <-time.After(wsRequestTimeout):
-		return fmt.Errorf("request timeout on method %s", method)
+		if retryCount < maxRequestRetries {
+			retryCount++
+			log.Println("[RPCClient][Debug][do]", "Received timeout on method", method, "Attempting retry number", retryCount)
+			return c.do(method, params, dst, retryCount)
+		}
+
+		return fmt.Errorf("request timeout on method %s after %d retries", method, maxRequestRetries)
 	}
 }

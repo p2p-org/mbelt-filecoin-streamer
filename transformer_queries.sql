@@ -37,7 +37,8 @@ CREATE STREAM TIPSETS_STREAM (
   "parent_weight" STRING,
   "parent_state" VARCHAR,
   "blocks" STRING,
-  "min_timestamp" BIGINT
+  "min_timestamp" BIGINT,
+  "state" INT
 ) WITH (kafka_topic='tipsets_stream', value_format='JSON');
 
 CREATE STREAM TIPSETS_STREAM_AVRO WITH(PARTITIONS=1, REPLICAS=1, VALUE_FORMAT='AVRO') AS SELECT *
@@ -49,7 +50,8 @@ CREATE STREAM TIPSETS_TO_REVERT_STREAM (
   "parent_weight" STRING,
   "parent_state" VARCHAR,
   "blocks" STRING,
-  "min_timestamp" BIGINT
+  "min_timestamp" BIGINT,
+  "state" INT
 ) WITH (kafka_topic='tipsets_to_revert_stream', value_format='JSON');
 
 CREATE STREAM TIPSETS_TO_REVERT_STREAM_AVRO WITH(PARTITIONS=1, VALUE_FORMAT='AVRO', REPLICAS=1) AS SELECT *
@@ -66,7 +68,8 @@ CREATE STREAM ACTOR_STATES_STREAM (
   "ts_key" VARCHAR,
   "parent_ts_key" VARCHAR,
   "addr" VARCHAR,
-  "state" VARCHAR
+  "state" VARCHAR,
+  "deleted" BOOLEAN
 ) WITH (kafka_topic='actor_states_stream', value_format='JSON');
 
 CREATE STREAM ACTOR_STATES_STREAM_AVRO WITH(PARTITIONS=1, VALUE_FORMAT='AVRO', REPLICAS=1) AS SELECT *
@@ -100,7 +103,7 @@ CREATE STREAM MINER_SECTORS_STREAM (
   "sector_number" STRING,
   "seal_proof" INT,
   "sealed_cid" VARCHAR,
-  "deal_ids" ARRAY<INT>,
+  "deal_ids" STRING,
   "activation" STRING,
   "expiration" STRING,
   "deal_weight" STRING,
