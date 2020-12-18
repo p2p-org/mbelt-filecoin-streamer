@@ -4,6 +4,7 @@ import (
 	"github.com/filecoin-project/go-address"
 	"github.com/filecoin-project/go-state-types/abi"
 	"github.com/ipfs/go-cid"
+	"github.com/mr-tron/base58"
 	"strconv"
 	"strings"
 )
@@ -59,7 +60,7 @@ func MultiaddrsToVarcharArray(elems []abi.Multiaddrs) string {
 	last := len(elems) - 1
 	for i := range elems {
 		result.WriteString(`"`)
-		result.WriteString(string(elems[i]))
+		result.WriteString(base58.Encode(elems[i]))
 		result.WriteString(`"`)
 
 		if i != last {

@@ -385,6 +385,68 @@ func (c *APIClient) GetMessageHttp(cid cid.Cid) *types.Message {
 	return resp.Result
 }
 
+func (c *APIClient) GetParentMessages(blockCid cid.Cid) []*MessageAndCid {
+	client := c.wsClientPool.Get()
+	resp := &MessageAndCidResponse{}
+	err := client.Do(ChainGetParentMessages, []interface{}{blockCid}, resp)
+	if err != nil {
+		return nil
+	}
+
+	c.wsClientPool.Put(client)
+
+	if resp.Error != nil {
+		log.Println("[API][Error][GetMessage]", resp.Error.Message)
+		return nil
+	}
+	return resp.Result
+}
+
+func (c *APIClient) GetParentMessagesHttp(blockCid cid.Cid) []*MessageAndCid {
+	resp := &MessageAndCidResponse{}
+	err := c.do(ChainGetParentMessages, []interface{}{blockCid}, resp)
+	if err != nil {
+		return nil
+	}
+
+	if resp.Error != nil {
+		log.Println("[API][Error][GetMessage]", resp.Error.Message)
+		return nil
+	}
+	return resp.Result
+}
+
+func (c *APIClient) GetParentReceipts(blockCid cid.Cid) []*types.MessageReceipt {
+	client := c.wsClientPool.Get()
+	resp := &MessageReceiptResponse{}
+	err := client.Do(ChainGetParentReceipts, []interface{}{blockCid}, resp)
+	if err != nil {
+		return nil
+	}
+
+	c.wsClientPool.Put(client)
+
+	if resp.Error != nil {
+		log.Println("[API][Error][GetMessage]", resp.Error.Message)
+		return nil
+	}
+	return resp.Result
+}
+
+func (c *APIClient) GetParentReceiptsHttp(blockCid cid.Cid) []*types.MessageReceipt {
+	resp := &MessageReceiptResponse{}
+	err := c.do(ChainGetParentReceipts, []interface{}{blockCid}, resp)
+	if err != nil {
+		return nil
+	}
+
+	if resp.Error != nil {
+		log.Println("[API][Error][GetMessage]", resp.Error.Message)
+		return nil
+	}
+	return resp.Result
+}
+
 func (c *APIClient) ChainHasObj(cid cid.Cid) (bool, error) {
 	client := c.wsClientPool.Get()
 	resp := &HasObj{}

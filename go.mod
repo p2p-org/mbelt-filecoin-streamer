@@ -3,6 +3,7 @@ module github.com/p2p-org/mbelt-filecoin-streamer
 go 1.14
 
 require (
+	github.com/btcsuite/btcutil v1.0.2 // indirect
 	github.com/filecoin-project/go-address v0.0.5-0.20201103152444-f2023ef3f5bb
 	github.com/filecoin-project/go-state-types v0.0.0-20201102161440-c8033295a1fc
 	github.com/filecoin-project/lotus v1.2.2

@@ -45,7 +45,7 @@ func NewClient(url string) (c *RPCClient, err error) {
 		Proxy: http.ProxyFromEnvironment,
 		HandshakeTimeout: 100 * time.Second,
 	}
-	dialWithRetry(dialer, url, 0)
+	c.conn = dialWithRetry(dialer, url, 0)
 
 	return c, nil
 }
@@ -56,7 +56,7 @@ func dialWithRetry(dialer *websocket.Dialer, url string, retryCount int) (conn *
 		if retryCount < maxDialReties {
 			retryCount++
 			log.Println("[RPCCient][Debug][Dial]", "Couldn't dial to lotus ws url. err:", err, "Attempting retry number", retryCount)
-			dialWithRetry(dialer, url, retryCount)
+			return dialWithRetry(dialer, url, retryCount)
 		} else {
 			panic(fmt.Sprintf("Couldn't dial to lotus ws url despite %d retries. err: %s", maxDialReties, err))
 		}

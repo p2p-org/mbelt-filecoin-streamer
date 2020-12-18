@@ -25,6 +25,9 @@ CREATE TABLE IF NOT EXISTS filecoin.messages
     "to"         VARCHAR(256),
     "value"      DECIMAL(100, 0),
     "gas"        JSONB,
+    "gas_used"   BIGINT,
+    "exit_code"  INT,
+    "return"     TEXT,
     "params"     TEXT,
     "data"       JSONB,
     "block_time" TIMESTAMP
@@ -156,6 +159,14 @@ CREATE TABLE IF NOT EXISTS filecoin._messages
     "params"     TEXT,
     "data"       TEXT,
     "block_time" BIGINT
+);
+
+CREATE TABLE IF NOT EXISTS filecoin._message_receipts
+(
+    "cid"        VARCHAR(256) NOT NULL PRIMARY KEY,
+    "gas_used"   BIGINT,
+    "exit_code"  INT,
+    "return"     TEXT
 );
 
 CREATE TABLE IF NOT EXISTS filecoin._tipsets
@@ -395,8 +406,6 @@ CREATE TRIGGER trg_messages_sink_upsert
     FOR EACH ROW
 EXECUTE PROCEDURE filecoin.sink_messages_insert();
 
-
-
 CREATE OR REPLACE FUNCTION filecoin.sink_trim_messages_after_insert()
     RETURNS trigger AS
 $$
@@ -414,6 +423,47 @@ CREATE TRIGGER trg_messages_sink_trim_after_upsert
     FOR EACH ROW
 EXECUTE PROCEDURE filecoin.sink_trim_messages_after_insert();
 
+-- Message receipts
+
+CREATE OR REPLACE FUNCTION filecoin.sink_message_receipts_insert()
+    RETURNS trigger AS
+$$
+BEGIN
+    UPDATE
+        filecoin.messages
+    SET "gas_used" = NEW."gas_used",
+        "exit_code" = NEW."exit_code",
+        "return" = NEW."return"
+    WHERE "cid" = NEW."cid";
+
+    RETURN NEW;
+END;
+
+$$
+    LANGUAGE 'plpgsql';
+
+CREATE TRIGGER trg_message_receipts_sink_upsert
+    BEFORE INSERT
+    ON filecoin._message_receipts
+    FOR EACH ROW
+EXECUTE PROCEDURE filecoin.sink_message_receipts_insert();
+
+CREATE OR REPLACE FUNCTION filecoin.sink_trim_message_receipts_after_insert()
+    RETURNS trigger AS
+$$
+BEGIN
+    DELETE FROM filecoin._message_receipts WHERE "cid" = NEW."cid";
+    RETURN NEW;
+END ;
+
+$$
+    LANGUAGE 'plpgsql';
+
+CREATE TRIGGER trg_message_receipts_sink_trim_after_upsert
+    AFTER INSERT
+    ON filecoin._message_receipts
+    FOR EACH ROW
+EXECUTE PROCEDURE filecoin.sink_trim_message_receipts_after_insert();
 
 -- TipSets
 
