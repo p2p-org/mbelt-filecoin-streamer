@@ -3,6 +3,15 @@ package worker
 import (
 	"context"
 	"encoding/json"
+	"log"
+	"math/big"
+	"os"
+	"os/signal"
+	"sync"
+	"syscall"
+	"time"
+	"unsafe"
+
 	"github.com/filecoin-project/go-address"
 	"github.com/filecoin-project/go-state-types/abi"
 	"github.com/filecoin-project/lotus/api"
@@ -14,19 +23,11 @@ import (
 	"github.com/p2p-org/mbelt-filecoin-streamer/services/messages"
 	"github.com/p2p-org/mbelt-filecoin-streamer/services/state"
 	"github.com/p2p-org/mbelt-filecoin-streamer/services/tipsets"
-	"log"
-	"math/big"
-	"os"
-	"os/signal"
-	"sync"
-	"syscall"
-	"time"
-	"unsafe"
 )
 
 const (
-	defaultHeight       = 5000
-	batchCapacity       = 5
+	defaultHeight = 5000
+	batchCapacity = 5
 
 	// current event is current head. We receive it once right after subscription on head updates
 	HeadEventCurrent = "current"
@@ -35,8 +36,8 @@ const (
 )
 
 func Start(conf *config.Config, sync bool, syncForce bool, updHead bool, syncFrom int, syncFromDbOffset int) {
+
 	exitCode := 0
-	defer os.Exit(exitCode)
 
 	err := services.InitServices(conf)
 	if err != nil {
@@ -77,6 +78,7 @@ func Start(conf *config.Config, sync bool, syncForce bool, updHead bool, syncFro
 	if updHead {
 		updateHeads(updCtx)
 	}
+	defer os.Exit(exitCode)
 
 	log.Println("mbelt-filecoin-streamer gracefully stopped")
 }
@@ -217,7 +219,7 @@ func syncTipSetForHeight(height abi.ChainEpoch) (*tipsets.TipSetWithState, bool)
 		// sorry for pointer arithmetics magic but I need to change received tipsets height (which is unexported)
 		//to requested height without a lot of useless code only to solve this
 		p := unsafe.Pointer(tipSetWithState.TipSet)
-		*(*abi.ChainEpoch)(unsafe.Pointer(uintptr(p) + unsafe.Sizeof(tipSet.Cids())  + unsafe.Sizeof(tipSet.Blocks()))) = height
+		*(*abi.ChainEpoch)(unsafe.Pointer(uintptr(p) + unsafe.Sizeof(tipSet.Cids()) + unsafe.Sizeof(tipSet.Blocks()))) = height
 
 		tipSetWithState.State = tipsets.StateNull
 
@@ -372,9 +374,9 @@ func collectActorChanges(tipset *types.TipSet) (out []*state.ActorInfo, nullRoun
 
 func parseRewardActorState(stateMap map[string]interface{}) *state.RewardActorState {
 	cumsumBaseline, cumsumRealized, effectiveBaselinePower, thisEpochBaselinePower, thisEpochReward, totalMined,
-	simpleTotal, baselineTotal, totalStoragePowerReward, positionEstimate, velocityEstimate := new(big.Int),
-	new(big.Int), new(big.Int), new(big.Int), new(big.Int), new(big.Int), new(big.Int), new(big.Int), new(big.Int),
-	new(big.Int), new(big.Int)
+		simpleTotal, baselineTotal, totalStoragePowerReward, positionEstimate, velocityEstimate := new(big.Int),
+		new(big.Int), new(big.Int), new(big.Int), new(big.Int), new(big.Int), new(big.Int), new(big.Int), new(big.Int),
+		new(big.Int), new(big.Int)
 
 	var effectiveNetworkTime int = 0
 	var epoch abi.ChainEpoch = 0

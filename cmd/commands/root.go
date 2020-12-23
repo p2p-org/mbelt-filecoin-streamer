@@ -1,11 +1,14 @@
 package commands
 
 import (
+	"log"
+
+	"github.com/subosito/gotenv"
+
 	"github.com/p2p-org/mbelt-filecoin-streamer/cmd/worker"
 	"github.com/p2p-org/mbelt-filecoin-streamer/config"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
-	"log"
 )
 
 var (
@@ -54,9 +57,14 @@ func init() {
 	viper.SetDefault("sub_head_updates", true)
 	viper.SetDefault("sync_from", -1)
 	viper.SetDefault("sync_from_db_offset", 100)
+	log.Println("init finished")
 }
 
 func initConfig() {
+	err := gotenv.Load(".env")
+	if err != nil {
+		log.Println("no .env file found")
+	}
 	viper.SetEnvPrefix("MBELT_FILECOIN_STREAMER")
 	viper.AutomaticEnv()
 

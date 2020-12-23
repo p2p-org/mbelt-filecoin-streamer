@@ -6,17 +6,26 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+
+	//"github.com/filecoin-project/specs-actors/actors/abi"
+
 	"github.com/filecoin-project/go-address"
-	"github.com/filecoin-project/go-state-types/abi"
-	"github.com/filecoin-project/lotus/api"
-	"github.com/filecoin-project/lotus/chain/types"
-	"github.com/filecoin-project/specs-actors/actors/builtin/miner"
-	"github.com/ipfs/go-cid"
+
 	"io/ioutil"
 	"log"
 	"net/http"
 	"strings"
 	"time"
+
+	"github.com/filecoin-project/go-state-types/abi"
+
+	"github.com/filecoin-project/lotus/api"
+	"github.com/filecoin-project/lotus/chain/types"
+
+	//"github.com/filecoin-project/specs-actors/actors/abi"
+	//"github.com/filecoin-project/specs-actors/actors/abi"
+	"github.com/filecoin-project/specs-actors/actors/builtin/miner"
+	"github.com/ipfs/go-cid"
 )
 
 const (
@@ -58,7 +67,6 @@ func Init(url, wsUrl, jwt string) (*APIClient, error) {
 
 		wsClientPool: NewWsClientPool(wsUrl),
 	}
-
 	testGenesis := c.GetGenesis()
 
 	if testGenesis == nil {

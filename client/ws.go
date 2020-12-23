@@ -5,11 +5,12 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/gorilla/websocket"
 	"log"
 	"net/http"
 	"sync/atomic"
 	"time"
+
+	"github.com/gorilla/websocket"
 )
 
 const (
@@ -42,10 +43,10 @@ func NewClient(url string) (c *RPCClient, err error) {
 		nextId: 0,
 	}
 	dialer := &websocket.Dialer{
-		Proxy: http.ProxyFromEnvironment,
-		HandshakeTimeout: 100 * time.Second,
+		Proxy:            http.ProxyFromEnvironment,
+		HandshakeTimeout: 3 * time.Second,
 	}
-	dialWithRetry(dialer, url, 0)
+	c.conn = dialWithRetry(dialer, url, 3)
 
 	return c, nil
 }
@@ -56,6 +57,7 @@ func dialWithRetry(dialer *websocket.Dialer, url string, retryCount int) (conn *
 		if retryCount < maxDialReties {
 			retryCount++
 			log.Println("[RPCCient][Debug][Dial]", "Couldn't dial to lotus ws url. err:", err, "Attempting retry number", retryCount)
+			time.Sleep(1 * time.Second)
 			dialWithRetry(dialer, url, retryCount)
 		} else {
 			panic(fmt.Sprintf("Couldn't dial to lotus ws url despite %d retries. err: %s", maxDialReties, err))

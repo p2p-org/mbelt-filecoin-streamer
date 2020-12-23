@@ -2,13 +2,14 @@ package blocks
 
 import (
 	"context"
+	"log"
+
 	"github.com/filecoin-project/lotus/api"
 	"github.com/filecoin-project/lotus/chain/types"
 	"github.com/p2p-org/mbelt-filecoin-streamer/client"
 	"github.com/p2p-org/mbelt-filecoin-streamer/config"
 	"github.com/p2p-org/mbelt-filecoin-streamer/datastore"
 	"github.com/p2p-org/mbelt-filecoin-streamer/datastore/pg"
-	"log"
 )
 
 type BlocksService struct {
@@ -85,7 +86,7 @@ func serializeHeader(header *types.BlockHeader) map[string]interface{} {
 		"bls_aggregate": blsAggregate,
 		"block":         header,
 		// "block_time": time.Unix(int64(header.Timestamp), 0).Format(time.RFC3339),
-		"block_time":    header.Timestamp,
+		"block_time": header.Timestamp,
 	}
 
 	// Parents data
