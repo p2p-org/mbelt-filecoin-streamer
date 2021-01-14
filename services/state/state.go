@@ -14,6 +14,7 @@ import (
 	"github.com/p2p-org/mbelt-filecoin-streamer/config"
 	"github.com/p2p-org/mbelt-filecoin-streamer/datastore"
 	"github.com/p2p-org/mbelt-filecoin-streamer/datastore/utils"
+	"github.com/btcsuite/btcutil/base58"
 	"log"
 	"math/big"
 )
@@ -251,7 +252,7 @@ func serializeMinerInfo(info *MinerInfo, key string) map[string]interface{} {
 		"control_addresses":             utils.AddressesToVarcharArray(info.ControlAddresses),
 		"new_worker_address":            newWorkerAddress,
 		"new_worker_effective_at":       newWorkerEffectiveAt,
-		"peer_id":                       string(info.PeerId),
+		"peer_id":                       base58.Encode(info.PeerId),
 		"multiaddrs":                    utils.MultiaddrsToVarcharArray(info.Multiaddrs),
 		"seal_proof_type":               info.SealProofType,
 		"sector_size":                   info.SectorSize,

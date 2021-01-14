@@ -6,6 +6,7 @@ import (
 	"github.com/filecoin-project/lotus/api"
 	"github.com/filecoin-project/lotus/chain/types"
 	"github.com/filecoin-project/specs-actors/actors/builtin/miner"
+	"github.com/ipfs/go-cid"
 )
 
 const (
@@ -16,6 +17,8 @@ const (
 	ChainGetTipSet         = "Filecoin.ChainGetTipSet"
 	ChainGetBlockMessages  = "Filecoin.ChainGetBlockMessages"
 	ChainGetMessage        = "Filecoin.ChainGetMessage"
+	ChainGetParentMessages = "Filecoin.ChainGetParentMessages"
+	ChainGetParentReceipts = "Filecoin.ChainGetParentReceipts"
 	ChainNotify            = "Filecoin.ChainNotify"
 	ChainHasObj            = "Filecoin.ChainHasObj"
 
@@ -45,6 +48,21 @@ type BlockMessages struct {
 type Message struct {
 	APIResponse
 	Result *types.Message `json:"result"` // payload
+}
+
+type MessageAndCid struct {
+	Cid cid.Cid
+	Message *types.Message
+}
+
+type MessageAndCidResponse struct {
+	APIResponse
+	Result []*MessageAndCid `json:"result"` // payload
+}
+
+type MessageReceiptResponse struct {
+	APIResponse
+	Result []*types.MessageReceipt `json:"result"` // payload
 }
 
 type Actors struct {

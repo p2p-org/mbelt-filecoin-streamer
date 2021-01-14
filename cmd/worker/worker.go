@@ -164,7 +164,6 @@ func syncTo(from int, to int, ctx context.Context) {
 		genesis := services.App().TipSetsService().GetGenesis()
 		services.App().TipSetsService().PushNormalState(genesis)
 		services.App().BlocksService().Push(genesis.Blocks())
-		services.App().MessagesService().Push(getBlockMessages(genesis.Blocks()))
 	}
 
 	for height := startHeight; height < syncHeight; {
@@ -234,28 +233,51 @@ func syncTipSetForHeight(height abi.ChainEpoch) (*tipsets.TipSetWithState, bool)
 	return tipSetWithState, false
 }
 
-func getBlockMessages(blocks []*types.BlockHeader) (msgs []*messages.MessageExtended) {
-	for _, block := range blocks {
-		blockMessages := services.App().MessagesService().GetBlockMessages(block.Cid())
+// Getting this tipsets messages and previous tipsets receipts
+func getMessagesAndReceipts(tipSet *types.TipSet) (msgs []*messages.MessageExtended, rcpts []*messages.MessageReceiptWithCid) {
+	if len(tipSet.Blocks()) > 0 {
+		firstBlockCid := tipSet.Blocks()[0].Cid()
+		tipSetMsgs := services.App().MessagesService().GetParentMessages(firstBlockCid)
+		receipts := services.App().MessagesService().GetParentReceipts(firstBlockCid)
+		for i, msg := range tipSetMsgs {
+			rcpts = append(rcpts, &messages.MessageReceiptWithCid{
+				Cid:       msg.Cid,
+				Receipt:   receipts[i],
+			})
+		}
+	}
+
+	for _, block := range tipSet.Blocks() {
+		blockCid := block.Cid()
+		blockMessages := services.App().MessagesService().GetBlockMessages(blockCid)
 
 		if blockMessages == nil || len(blockMessages.BlsMessages) == 0 {
 			continue
 		}
 
-		for _, blsMessage := range blockMessages.BlsMessages {
+		for _, msg := range blockMessages.BlsMessages {
 			msgs = append(msgs, &messages.MessageExtended{
-				BlockCid:  block.Cid(),
-				Message:   blsMessage,
+				Cid:       msg.Cid(),
+				BlockCid:  blockCid,
+				Message:   msg,
+				Timestamp: block.Timestamp,
+			})
+		}
+
+		for _, msg := range blockMessages.SecpkMessages {
+			msgs = append(msgs, &messages.MessageExtended{
+				Cid:       msg.Cid(),
+				BlockCid:  blockCid,
+				Message:   &msg.Message,
 				Timestamp: block.Timestamp,
 			})
 		}
 
 	}
 
-	return msgs
+	return msgs, rcpts
 }
 
-// TODO: get list of miners every time this is called and check if addr is miner if it is so then collect it's info
 func collectActorChanges(tipset *types.TipSet) (out []*state.ActorInfo, nullRounds []types.TipSetKey,
 	minerInfo []*state.MinerInfo, minerSectors []*state.MinerSector, reward *state.RewardActor) {
 
@@ -457,10 +479,12 @@ func parseRewardActorState(stateMap map[string]interface{}) *state.RewardActorSt
 }
 
 func collectAndPushOtherEntitiesByTipSet(tipset *tipsets.TipSetWithState) {
-	blocks := tipset.Blocks()
 	services.App().TipSetsService().Push(tipset)
-	services.App().BlocksService().Push(blocks)
-	services.App().MessagesService().Push(getBlockMessages(blocks))
+	services.App().BlocksService().Push(tipset.Blocks())
+
+	msgs, receipts := getMessagesAndReceipts(tipset.TipSet)
+	services.App().MessagesService().Push(msgs)
+	services.App().MessagesService().PushReceipts(receipts)
 
 	// ignoring null rounds
 	changes, _, minersInfo, minersSectors, rewardStates := collectActorChanges(tipset.TipSet)
