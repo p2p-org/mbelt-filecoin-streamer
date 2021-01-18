@@ -1,6 +1,7 @@
 package messages
 
 import (
+	"encoding/base64"
 	"github.com/filecoin-project/go-state-types/abi"
 	"github.com/filecoin-project/lotus/api"
 	"github.com/filecoin-project/lotus/chain/types"
@@ -109,11 +110,9 @@ func serializeMessage(extMessage *MessageExtended) map[string]interface{} {
 		"from":      extMessage.Message.From.String(),
 		"to":        extMessage.Message.To.String(),
 		"value":     extMessage.Message.ValueReceived(),
-		"gas": map[string]interface{}{
-			"limit":   extMessage.Message.GasLimit,
-			"fee_cap": extMessage.Message.GasFeeCap,
-			"premium": extMessage.Message.GasPremium,
-		},
+		"gas_limit": extMessage.Message.GasLimit,
+		"gas_fee_cap": extMessage.Message.GasFeeCap,
+		"gas_premium": extMessage.Message.GasPremium,
 		"params": extMessage.Message.Params,
 		"data":   extMessage.Message,
 		// "block_time": time.Unix(int64(extMessage.Timestamp), 0).Format(time.RFC3339),
@@ -127,6 +126,6 @@ func serializeMessageReceipt(receipt *MessageReceiptWithCid) map[string]interfac
 		"cid":       receipt.Cid.String(),
 		"gas_used":  receipt.Receipt.GasUsed,
 		"exit_code": receipt.Receipt.ExitCode,
-		"return":    string(receipt.Receipt.Return),
+		"return":    base64.StdEncoding.EncodeToString(receipt.Receipt.Return),
 	}
 }

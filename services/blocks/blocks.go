@@ -75,17 +75,18 @@ func serializeHeader(header *types.BlockHeader) map[string]interface{} {
 	}
 
 	result := map[string]interface{}{
-		"cid":           header.Cid().String(),
-		"height":        header.Height,
-		"win_count":     header.ElectionProof.WinCount,
-		"miner":         header.Miner.String(),
-		"messages_cid":  header.Messages.String(),
-		"validated":     header.IsValidated(),
-		"blocksig":      blockSig,
-		"bls_aggregate": blsAggregate,
-		"block":         header,
+		"cid":             header.Cid().String(),
+		"height":          header.Height,
+		"win_count":       header.ElectionProof.WinCount,
+		"miner":           header.Miner.String(),
+		"messages_cid":    header.Messages.String(),
+		"validated":       header.IsValidated(),
+		"blocksig":        blockSig,
+		"bls_aggregate":   blsAggregate,
+		"block":           header,
+		"parent_base_fee": header.ParentBaseFee,
 		// "block_time": time.Unix(int64(header.Timestamp), 0).Format(time.RFC3339),
-		"block_time":    header.Timestamp,
+		"block_time":      header.Timestamp,
 	}
 
 	// Parents data

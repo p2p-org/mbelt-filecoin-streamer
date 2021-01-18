@@ -9,6 +9,7 @@ CREATE STREAM BLOCKS_STREAM (
   "blocksig" VARCHAR,
   "bls_aggregate" VARCHAR,
   "block" VARCHAR,
+  "parent_base_fee" STRING,
   "block_time" BIGINT
 ) WITH (kafka_topic='blocks_stream', value_format='JSON');
 
@@ -22,7 +23,9 @@ CREATE STREAM MESSAGES_STREAM (
   "from" VARCHAR,
   "to" VARCHAR,
   "value" STRING,
-  "gas" VARCHAR,
+  "gas_limit" BIGINT,
+  "gas_premium" STRING,
+  "gas_fee_cap" STRING,
   "params" STRING,
   "data" VARCHAR,
   "block_time" BIGINT

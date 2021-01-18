@@ -2,35 +2,38 @@ CREATE SCHEMA IF NOT EXISTS filecoin;
 
 CREATE TABLE IF NOT EXISTS filecoin.blocks
 (
-    "cid"           VARCHAR(256) NOT NULL PRIMARY KEY,
-    "height"        BIGINT,
-    "parents"       JSONB,
-    "win_count"     INT,
-    "miner"         VARCHAR(128),
-    "messages_cid"  VARCHAR(256),
-    "validated"     BOOLEAN,
-    "blocksig"      JSONB,
-    "bls_aggregate" JSONB,
-    "block"         JSONB,
-    "block_time"    TIMESTAMP
+    "cid"             VARCHAR(256) NOT NULL PRIMARY KEY,
+    "height"          BIGINT,
+    "parents"         JSONB,
+    "win_count"       INT,
+    "miner"           VARCHAR(128),
+    "messages_cid"    VARCHAR(256),
+    "validated"       BOOLEAN,
+    "blocksig"        JSONB,
+    "bls_aggregate"   JSONB,
+    "block"           JSONB,
+    "parent_base_fee" DECIMAL(100, 0),
+    "block_time"      TIMESTAMP
 );
 
 
 CREATE TABLE IF NOT EXISTS filecoin.messages
 (
-    "cid"        VARCHAR(256) NOT NULL PRIMARY KEY,
-    "block_cid"  VARCHAR(256),
-    "method"     INT,
-    "from"       VARCHAR(256),
-    "to"         VARCHAR(256),
-    "value"      DECIMAL(100, 0),
-    "gas"        JSONB,
-    "gas_used"   BIGINT,
-    "exit_code"  INT,
-    "return"     TEXT,
-    "params"     TEXT,
-    "data"       JSONB,
-    "block_time" TIMESTAMP
+    "cid"         VARCHAR(256) NOT NULL PRIMARY KEY,
+    "block_cid"   VARCHAR(256),
+    "method"      INT,
+    "from"        VARCHAR(256),
+    "to"          VARCHAR(256),
+    "value"       DECIMAL(100, 0),
+    "gas_limit"   BIGINT,
+    "gas_premium" DECIMAL(100, 0),
+    "gas_fee_cap" DECIMAL(100, 0),
+    "gas_used"    BIGINT,
+    "exit_code"   INT,
+    "return"      TEXT,
+    "params"      TEXT,
+    "data"        JSONB,
+    "block_time"  TIMESTAMP
 );
 
 CREATE TABLE IF NOT EXISTS filecoin.tipsets
@@ -133,32 +136,35 @@ CREATE CAST (varchar as jsonb) WITH FUNCTION varchar_to_jsonb(varchar) AS IMPLIC
 
 CREATE TABLE IF NOT EXISTS filecoin._blocks
 (
-    "cid"           VARCHAR(256) NOT NULL PRIMARY KEY,
-    "height"        TEXT,
-    "parents"       TEXT,
-    "win_count"     INT,
-    "miner"         VARCHAR(128),
-    "messages_cid"  VARCHAR(256),
-    "validated"     BOOLEAN,
-    "blocksig"      TEXT,
-    "bls_aggregate" TEXT,
-    "block"         TEXT,
-    "block_time"    BIGINT
+    "cid"             VARCHAR(256) NOT NULL PRIMARY KEY,
+    "height"          TEXT,
+    "parents"         TEXT,
+    "win_count"       INT,
+    "miner"           VARCHAR(128),
+    "messages_cid"    VARCHAR(256),
+    "validated"       BOOLEAN,
+    "blocksig"        TEXT,
+    "bls_aggregate"   TEXT,
+    "block"           TEXT,
+    "parent_base_fee" TEXT,
+    "block_time"      BIGINT
 );
 
 
 CREATE TABLE IF NOT EXISTS filecoin._messages
 (
-    "cid"        VARCHAR(256) NOT NULL PRIMARY KEY,
-    "block_cid"  VARCHAR(256),
-    "method"     INT,
-    "from"       VARCHAR(256),
-    "to"         VARCHAR(256),
-    "value"      TEXT,
-    "gas"        TEXT,
-    "params"     TEXT,
-    "data"       TEXT,
-    "block_time" BIGINT
+    "cid"         VARCHAR(256) NOT NULL PRIMARY KEY,
+    "block_cid"   VARCHAR(256),
+    "method"      INT,
+    "from"        VARCHAR(256),
+    "to"          VARCHAR(256),
+    "value"       TEXT,
+    "gas_limit"   BIGINT,
+    "gas_premium" TEXT,
+    "gas_fee_cap" TEXT,
+    "params"      TEXT,
+    "data"        TEXT,
+    "block_time"  BIGINT
 );
 
 CREATE TABLE IF NOT EXISTS filecoin._message_receipts
@@ -284,6 +290,7 @@ BEGIN
                                 "blocksig",
                                 "bls_aggregate",
                                 "block",
+                                "parent_base_fee",
                                 "block_time")
     VALUES (NEW."cid",
             NEW."height"::BIGINT,
@@ -295,6 +302,7 @@ BEGIN
             NEW."blocksig"::jsonb,
             NEW."bls_aggregate"::jsonb,
             NEW."block"::jsonb,
+            NEW."parent_base_fee"::DECIMAL(100,0),
             to_timestamp(NEW."block_time"))
     ON CONFLICT DO NOTHING;
 
@@ -378,7 +386,9 @@ BEGIN
                                   "from",
                                   "to",
                                   "value",
-                                  "gas",
+                                  "gas_limit",
+                                  "gas_premium",
+                                  "gas_fee_cap",
                                   "params",
                                   "data",
                                   "block_time")
@@ -388,7 +398,9 @@ BEGIN
             NEW."from",
             NEW."to",
             NEW."value"::DECIMAL(100, 0),
-            NEW."gas"::jsonb,
+            NEW."gas_limit",
+            NEW.gas_premium::DECIMAL(100, 0),
+            NEW.gas_fee_cap::DECIMAL(100, 0),
             NEW."params",
             NEW."data"::jsonb,
             to_timestamp(NEW."block_time"))
