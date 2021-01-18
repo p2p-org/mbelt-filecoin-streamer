@@ -57,6 +57,7 @@ func init() {
 	viper.SetDefault("sub_head_updates", true)
 	viper.SetDefault("sync_from", -1)
 	viper.SetDefault("sync_from_db_offset", 100)
+	rootCmd.AddCommand(watchDogCMD)
 	log.Println("init finished")
 }
 

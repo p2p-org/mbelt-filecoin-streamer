@@ -1,5 +1,12 @@
 CREATE SCHEMA IF NOT EXISTS filecoin;
 
+
+CREATE TABLE  IF NOT EXISTS filecoin._config (
+    "key" VARCHAR (100) PRIMARY KEY,
+    "value" TEXT
+);
+
+
 CREATE TABLE IF NOT EXISTS filecoin.blocks
 (
     "cid"           VARCHAR(256) NOT NULL PRIMARY KEY,

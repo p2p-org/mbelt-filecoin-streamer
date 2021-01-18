@@ -5,7 +5,12 @@ import (
 )
 
 const tbl_blocks = "blocks"
-const SelectBlocks = "select cid, height, block_time from blocks "
+const (
+	SelectBlocks            = "select cid, height, block_time from filecoin.blocks "
+	SelectBlocksWithParents = `select cid, height, block_time,
+		ARRAY(SELECT json_array_elements_text((parents -> 'cids')::json))
+		as parents_cids  from filecoin.blocks`
+)
 
 func (db *PgDatastore) GetCurrentBlock(ctx context.Context) (*Block, error) {
 	var block Block
@@ -30,7 +35,7 @@ func (db *PgDatastore) GetBlockByCID(ctx context.Context, cid string) (*Block, e
 
 func (db *PgDatastore) GetBlockByHeight(ctx context.Context, height int64) (*Block, error) {
 	var block Block
-	err := db.db.GetContext(ctx, &block, SelectBlocks+" where height = $1 limit 1", height)
+	err := db.db.GetContext(ctx, &block, SelectBlocksWithParents+" where height = $1 limit 1", height)
 	//err := row.Scan(&block.Cid, &block.Height, &block.BlockTime, &block.Parents)
 	return &block, err
 }
@@ -46,9 +51,9 @@ func (db *PgDatastore) GetParentBlockByCID(ctx context.Context, cid string) (*Bl
 
 func (db *PgDatastore) GetParentBlockByHeight(ctx context.Context, height int64) (*Block, error) {
 	var block Block
-	err := db.db.GetContext(ctx, &block, SelectBlocks+` 
+	err := db.db.GetContext(ctx, &block, SelectBlocksWithParents+` 
 	where cid = (select blocks.parents -> 'cids' ->> 0
-	from blocks where height = $1);`, height)
+	from blocks where height = $1  LIMIT 1);`, height)
 	//err := row.Scan(&block.Cid, &block.Height, &block.BlockTime, &block.Parents)
 	return &block, err
 }

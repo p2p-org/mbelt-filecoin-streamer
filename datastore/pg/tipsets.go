@@ -12,7 +12,7 @@ import (
 //min_timestamp
 //state
 
-const SelectTipset = "select * from tipsets "
+const SelectTipset = "select * from filecoin.tipsets "
 
 func (db *PgDatastore) GetCurrentTipset(ctx context.Context) (*Tipset, error) {
 	var tipset Tipset
