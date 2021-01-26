@@ -137,29 +137,14 @@ func (w *Watcher) Start(startHeight int) {
 	//}()
 	wg.Add(1)
 	go func() {
-		w.checkBlockConsistency(ctx, w.cs.startBlockHeight, w.cs.maxTipsetHeight)
+		//w.checkBlockConsistency(ctx, w.cs.startBlockHeight, w.cs.maxTipsetHeight)
+		w.checkBlockConsistency(ctx, w.cs.startBlockHeight, 6)
 		wg.Done()
 	}()
 	wg.Wait()
 }
 
 func (w *Watcher) checkTipsetsConsistency(ctx context.Context, fromHeight, toHeight int) {
-
-	//tipsetGenesis, err := w.db.GetGenesisTipset(ctx)
-	//if err != nil {
-	//	logrus.Error(err)
-	//	return
-	//}
-	//updatedTipset, ok := w.api.GetByHeight(abi.ChainEpoch(9))
-	//pp.Println(ok)
-	//pp.Println(updatedTipset.String())
-	//pp.Println(updatedTipset.ParentState())
-	//pp.Println(updatedTipset.Blocks())
-	//pp.Println(updatedTipset.Cids())
-	//pp.Println(updatedTipset.Height().String())
-	//return
-	//pp.Println(tipsetGenesis)
-	//start :=
 
 	for i := fromHeight; i < w.cs.maxTipsetHeight; i++ {
 		currentTipset, err := w.db.GetTipsetByHeight(ctx, int64(i))
@@ -198,7 +183,17 @@ func (w *Watcher) checkBlockConsistency(ctx context.Context, fromHeight, toHeigh
 				logrus.Warn("block not found, with height: ", i, "; trying to retrieve")
 				// as we didn't found block in db with height, we must find it,s
 				// ancestor
+				//pp.Println("block not found, with height: ", i, ", block.Cid: ", block.Cid)
 				if block.Cid == "" {
+					pp.Println("empty cid of block with height: ", i)
+					pp.Println("trying to retrieve from blockchain node")
+					missingTipset, ok := w.api.GetByHeight(abi.ChainEpoch(i))
+					if !ok {
+						pp.Println("w.api.GetByHeight is not OK, height: ", i)
+					}
+					blocks := pg.ParseBlocks(missingTipset)
+					pp.Println(blocks)
+					w.ss.BlocksService().Push(missingTipset.Blocks())
 					nextParentHeight := i + 1
 					parent, err := w.db.GetParentBlockByHeight(ctx, int64(nextParentHeight))
 					if err != nil {
@@ -227,7 +222,7 @@ func (w *Watcher) checkBlockConsistency(ctx context.Context, fromHeight, toHeigh
 				w.ss.BlocksService().Push([]*types.BlockHeader{missingBlock})
 				continue
 			}
-			logrus.Error(err, ", bad block height: ", i)
+			//logrus.Error(err, ", bad block height: ", i)
 			continue
 		}
 

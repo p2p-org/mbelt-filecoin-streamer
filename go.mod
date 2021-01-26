@@ -3,6 +3,7 @@ module github.com/p2p-org/mbelt-filecoin-streamer
 go 1.14
 
 require (
+	github.com/DATA-DOG/go-sqlmock v1.5.0
 	github.com/banzaicloud/logrus-runtime-formatter v0.0.0-20190729070250-5ae5475bae5e
 	github.com/btcsuite/btcutil v1.0.2
 	github.com/filecoin-project/go-address v0.0.5-0.20201103152444-f2023ef3f5bb

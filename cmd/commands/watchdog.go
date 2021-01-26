@@ -33,6 +33,7 @@ var (
 )
 
 func init() {
+	cobra.OnInitialize(initConfig)
 	// arguments parsing for watchdog command
 	watchDogCMD.PersistentFlags().IntVar(&start_height, "start", 0,
 		"Specify start height offset from which watcher will verify consistency of blocks in DB")

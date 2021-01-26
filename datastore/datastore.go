@@ -4,9 +4,13 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"log"
+	"time"
+
+	"github.com/sirupsen/logrus"
+
 	"github.com/p2p-org/mbelt-filecoin-streamer/config"
 	"github.com/segmentio/kafka-go"
-	"log"
 )
 
 const (
@@ -25,6 +29,7 @@ const (
 type KafkaDatastore struct {
 	config       *config.Config
 	kafkaWriters map[string]*kafka.Writer
+	conn         *kafka.Conn
 	// ack   chan kafka.Event
 	// pushChan chan interface{}
 }
@@ -35,21 +40,58 @@ func Init(config *config.Config) (*KafkaDatastore, error) {
 		kafkaWriters: make(map[string]*kafka.Writer),
 		// pushChan:     make(chan interface{}),
 	}
-
+	conn, err := kafka.Dial("tcp", ds.config.KafkaHosts)
+	if err != nil {
+		log.Println("[KafkaDatastore][Error][Init]", "kafka.Dial() error: ", err)
+		return nil, err
+	}
+	ds.conn = conn
 	for _, topic := range []string{TopicBlocks, TopicTipsetsToRevert, TopicMessages, TopicMessageReceipts, TopicTipSets,
 		TopicActorStates, TopicMinerInfos, TopicMinerSectors, TopicRewardActorStates} {
 		writer := kafka.NewWriter(kafka.WriterConfig{
-			Brokers:  []string{ds.config.KafkaHosts},
-			Topic:    topic,
-			Balancer: &kafka.LeastBytes{},
+			Brokers:      []string{ds.config.KafkaHosts},
+			Topic:        topic,
+			WriteTimeout: 1 * time.Second,
+			ReadTimeout:  1 * time.Second,
+			Balancer:     &kafka.LeastBytes{},
 		})
 		if writer == nil {
 			return nil, errors.New("cannot create kafka writer")
 		}
+
+		//pp.Println(conn.Brokers())
 		ds.kafkaWriters[topic] = writer
 	}
 
+	err = ds.testKafkaConnection()
+	if err != nil {
+		return nil, err
+	}
+
 	return ds, nil
+}
+
+func (kd *KafkaDatastore) testKafkaConnection() error {
+	err := kd.conn.CreateTopics(kafka.TopicConfig{
+		Topic:              "test_topic1233r452354afq34563",
+		NumPartitions:      1,
+		ReplicationFactor:  1,
+		ReplicaAssignments: nil,
+		ConfigEntries:      nil,
+	})
+	if err != nil {
+		log.Println("[KafkaDatastore][Error][testKafkaConnection]", "CreateTopics error: ", err)
+		return err
+	}
+
+	//err = kd.conn.DeleteTopics("test_topic123")
+	//if err != nil {
+	//	log.Println("[KafkaDatastore][Error][testKafkaConnection]", "DeleteTopics error: ", err)
+	//	return err
+	//}
+
+	logrus.Info("kafka connection tested successfully")
+	return nil
 }
 
 func (ds *KafkaDatastore) Push(topic string, m map[string]interface{}) (err error) {
@@ -86,7 +128,7 @@ func (ds *KafkaDatastore) Push(topic string, m map[string]interface{}) (err erro
 	err = ds.kafkaWriters[topic].WriteMessages(context.Background(), kMsgs...)
 
 	if err != nil {
-		log.Println("[KafkaDatastore][Error][push]", "Cannot produce data", err)
+		log.Println("[KafkaDatastore][Error][push]", "Cannot write data", err)
 	}
 	return err
 }

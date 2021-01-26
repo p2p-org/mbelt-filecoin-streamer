@@ -35,6 +35,15 @@ type Tipset struct {
 	MinTimestamp time.Time      `db:"min_timestamp"`
 }
 
+type Message struct {
+	Cid       string    `db:"cid"`
+	BlockCid  string    `db:"block_cid"`
+	Value     int64     `db:"value"`
+	From      string    `db:"from"`
+	To        string    `db:"to"`
+	BlockTime time.Time `db:"block_time"`
+}
+
 func ParseTipset(t *types.TipSet) *Tipset {
 	var res Tipset
 	h, _ := strconv.Atoi(t.Height().String())
@@ -53,20 +62,20 @@ func ParseTipset(t *types.TipSet) *Tipset {
 
 }
 
-func ParseBlock(t *types.TipSet) *Tipset {
-	var res Tipset
-	h, _ := strconv.Atoi(t.Height().String())
-	res.Height = int64(h)
-	for _, b := range t.Blocks() {
-		res.Blocks = append(res.Blocks, b.Cid().String())
-	}
-	for _, p := range t.Parents().Cids() {
-		res.Parents = append(res.Parents, p.String())
-	}
-	res.MinTimestamp = time.Unix(int64(t.MinTimestamp()), 0)
-	res.ParentState = t.ParentState().String()
-	res.ParentWeight = t.ParentWeight().Int64()
+func ParseBlocks(t *types.TipSet) []Block {
+	var res []Block
 
-	return &res
+	for _, b := range t.Blocks() {
+		t := Block{}
+		t.Cid = b.Cid().String()
+		t.BlockTime = time.Unix(int64(b.Timestamp), 0)
+		t.Height = int64(b.Height)
+		for _, p := range b.Parents {
+			t.Parents = append(t.Parents, p.String())
+		}
+		res = append(res, t)
+	}
+
+	return res
 
 }

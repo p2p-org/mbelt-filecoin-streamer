@@ -1,7 +1,6 @@
 package pg
 
 import (
-	"database/sql"
 	"errors"
 
 	"github.com/jmoiron/sqlx"
@@ -15,8 +14,8 @@ const (
 )
 
 type PgDatastore struct {
-	conn *sql.DB
-	db   *sqlx.DB
+	//conn *sql.DB
+	db *sqlx.DB
 }
 
 func Init(config *config.Config) (*PgDatastore, error) {
@@ -24,29 +23,29 @@ func Init(config *config.Config) (*PgDatastore, error) {
 		return nil, errors.New("can't init postgres datastore with nil config")
 	}
 
-	db, err := sql.Open("postgres", config.PgUrl)
-	if err != nil {
-		return nil, err
-	}
+	//db, err := sql.Open("postgres", config.PgUrl)
+	//if err != nil {
+	//	return nil, err
+	//}
 	sqlxConnet, err := sqlx.Connect("postgres", config.PgUrl)
 	if err != nil {
 		return nil, err
 	}
 	//db.SetMaxOpenConns(15)
-	db.SetMaxIdleConns(30)
+	sqlxConnet.SetMaxIdleConns(30)
 
-	ds := &PgDatastore{db, sqlxConnet}
+	ds := &PgDatastore{sqlxConnet}
 	return ds, nil
 }
 
 func (ds *PgDatastore) GetMaxHeight() (height int, err error) {
-	r := ds.conn.QueryRow(QueryGetMaxHeight)
+	r := ds.db.QueryRow(QueryGetMaxHeight)
 	err = r.Scan(&height)
 	return
 }
 
 func (ds *PgDatastore) GetMaxHeightOfTipsets() (height int, err error) {
-	r := ds.conn.QueryRow(`SELECT coalesce(max(height), 0) FROM filecoin.tipsets`)
+	r := ds.db.QueryRow(`SELECT coalesce(max(height), 0) FROM filecoin.tipsets`)
 	err = r.Scan(&height)
 	return
 }
