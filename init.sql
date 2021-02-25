@@ -19,7 +19,8 @@ CREATE TABLE IF NOT EXISTS filecoin.blocks
     "blocksig"      JSONB,
     "bls_aggregate" JSONB,
     "block"         JSONB,
-    "block_time"    TIMESTAMP
+    "block_time"    TIMESTAMP,
+    "state"         SMALLINT
 );
 
 

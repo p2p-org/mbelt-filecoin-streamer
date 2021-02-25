@@ -33,6 +33,16 @@ go build -o mbelt-filecoin-streamer github.com/p2p-org/mbelt-filecoin-streamer
 mbelt-filecoin-streamer --sync-from=1000
 ```
 
+### How to start consistency watcher 
+
+Along with streamer, which extract data, the watcher checks all 
+blocks, tipsets and messages and their consistency.
+
+To start via docker compose, you need to modify env variables in docker-compose.yml (mbelt-watchdog) and execution flags in Dockerfile (if needed) and then just run
+```shell script
+docker-compose up filecoin-watchdog
+```
+
 #### Environment variables
 
 | Variable | Description | Example |

@@ -4,6 +4,11 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/filecoin-project/go-state-types/abi"
+	"github.com/ipfs/go-cid"
+
+	"github.com/p2p-org/mbelt-filecoin-streamer/services/messages"
+
 	"github.com/filecoin-project/lotus/chain/types"
 	"github.com/lib/pq"
 )
@@ -78,4 +83,37 @@ func ParseBlocks(t *types.TipSet) []Block {
 
 	return res
 
+}
+
+func ParseMessages(t []*types.Message, block *Block) []Message {
+	var res []Message
+	for _, m := range t {
+		var tm Message
+		tm.Cid = m.Cid().String()
+		tm.BlockCid = m.Cid().String()
+		tm.Value = m.GasLimit
+		tm.From = m.From.String()
+		tm.To = m.To.String()
+		tm.BlockCid = block.Cid
+		res = append(res, tm)
+		tm.BlockTime = block.BlockTime
+	}
+	return res
+}
+
+func ParseMessageExtended(t []*types.Message, block *Block) []*messages.MessageExtended {
+	var res []*messages.MessageExtended
+	for _, m := range t {
+		bcid, _ := cid.Cast([]byte(block.Cid))
+		em := messages.MessageExtended{
+			Cid:       m.Cid(),
+			BlockCid:  bcid,
+			Height:    abi.ChainEpoch(block.Height),
+			Message:   m,
+			Timestamp: uint64(block.BlockTime.Unix()),
+		}
+		res = append(res, &em)
+
+	}
+	return res
 }

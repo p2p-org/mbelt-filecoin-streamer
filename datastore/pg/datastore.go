@@ -10,7 +10,8 @@ import (
 )
 
 const (
-	QueryGetMaxHeight = `SELECT coalesce(max(height), 0) FROM filecoin.blocks`
+	QueryGetMaxHeight         = `SELECT coalesce(max(height), 0) FROM filecoin.blocks`
+	WatchdogLastCheckedHeight = "watchdog_last_checked_height"
 )
 
 type PgDatastore struct {
@@ -48,4 +49,14 @@ func (ds *PgDatastore) GetMaxHeightOfTipsets() (height int, err error) {
 	r := ds.db.QueryRow(`SELECT coalesce(max(height), 0) FROM filecoin.tipsets`)
 	err = r.Scan(&height)
 	return
+}
+
+func (ds *PgDatastore) SaveLastCheckedHeight(height int) error {
+
+	_, err := ds.db.Exec(`INSERT INTO _config  (key, value)  VALUES ($1, $2)`,
+		WatchdogLastCheckedHeight, height)
+	if err != nil {
+		return err
+	}
+	return nil
 }

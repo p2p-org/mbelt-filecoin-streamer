@@ -71,13 +71,45 @@ func NewWatcher(cfg *config.Config) (*Watcher, error) {
 }
 
 type CurrentStatus struct {
-	maxBlockHeight   int
-	startBlockHeight int
-	maxTipsetHeight  int
+	sync.RWMutex
+	maxBlockHeight    int
+	startBlockHeight  int
+	maxTipsetHeight   int
+	lastCheckedHeight int
+	skipped           []skippedEntity
+}
+type skippedEntity struct {
+	entity     interface{}
+	skipReason string
+}
+
+type checkedHeights struct {
+	lastTipsetHeight  int
+	lastBlockHeight   int
+	lastMessageHeight int
+}
+
+func (w *Watcher) SetLastCheckedHeight(height int) {
+	w.cs.Lock()
+	w.cs.lastCheckedHeight = height
+	w.cs.Unlock()
+}
+
+func (w *Watcher) GetLastCheckedHeight() int {
+	return w.cs.lastCheckedHeight
+}
+
+func (w *Watcher) AddSkippedEntity(entity interface{}, reason string) {
+	w.cs.Lock()
+	w.cs.skipped = append(w.cs.skipped, skippedEntity{
+		entity:     entity,
+		skipReason: reason,
+	})
+	w.cs.Unlock()
 }
 
 func InitWatcher(cfg *config.Config, startHeight int) {
-	pp.Println("InitWatcher startHeight ", startHeight)
+	logrus.Info("InitWatcher startHeight: ", startHeight)
 	watcher, err := NewWatcher(cfg)
 	if err != nil {
 		logrus.Error(err)
@@ -114,7 +146,9 @@ func (w *Watcher) Start(startHeight int) {
 		logrus.Error(err)
 		return
 	}
-	//pp.Println("currentMaxHeight from DB ", currentMaxHeight)
+	defer func() {
+		w.db.SaveLastCheckedHeight(w.GetLastCheckedHeight())
+	}()
 
 	w.cs.maxBlockHeight = currentMaxHeight
 	currentMaxHeightTipsets, err := w.db.GetMaxHeightOfTipsets()
@@ -137,31 +171,30 @@ func (w *Watcher) Start(startHeight int) {
 	//}()
 	wg.Add(1)
 	go func() {
-		//w.checkBlockConsistency(ctx, w.cs.startBlockHeight, w.cs.maxTipsetHeight)
-		w.checkBlockConsistency(ctx, w.cs.startBlockHeight, 6)
+		//w.startBlockChecker(ctx, w.cs.startBlockHeight, w.cs.maxTipsetHeight)
+		w.startBlockChecker(ctx, w.cs.startBlockHeight, 6)
 		wg.Done()
 	}()
 	wg.Wait()
+
+	pp.Println(w.cs)
 }
 
 func (w *Watcher) checkTipsetsConsistency(ctx context.Context, fromHeight, toHeight int) {
 
 	for i := fromHeight; i < w.cs.maxTipsetHeight; i++ {
+		defer func() {
+			w.cs.lastCheckedHeight = i
+		}()
 		currentTipset, err := w.db.GetTipsetByHeight(ctx, int64(i))
 		if err != nil {
 			logrus.Error(err)
 			continue
 		}
-		if currentTipset != nil {
-			switch {
-			case len(currentTipset.Blocks) == 0:
-				logrus.Warn("empty tipset with height: ", i)
-				updatedTipset, ok := w.api.GetByHeight(abi.ChainEpoch(i))
-				pp.Println(ok)
-				pp.Println(updatedTipset)
-				//w.ss.TipSetsService().PushNormalState(updatedTipset)
-			}
+		if currentTipset.State == 1 {
+			continue
 		}
+
 		//pp.Println(currentTipset)
 		//
 		//if i > 5 {
@@ -171,28 +204,25 @@ func (w *Watcher) checkTipsetsConsistency(ctx context.Context, fromHeight, toHei
 	}
 }
 
-func (w *Watcher) checkBlockConsistency(ctx context.Context, fromHeight, toHeight int) {
+func (w *Watcher) startBlockChecker(ctx context.Context, fromHeight, toHeight int) {
 
 	for i := fromHeight; i < toHeight; i++ {
-
-		//pp.Println("checkBlockConsistency, toHeight ", fromHeight, toHeight)
+		defer func() {
+			w.SetLastCheckedHeight(i)
+		}()
 		block, err := w.db.GetBlockByHeight(ctx, int64(i))
 		if err != nil {
-
 			if strings.Contains(err.Error(), "no rows in result set") {
 				logrus.Warn("block not found, with height: ", i, "; trying to retrieve")
 				// as we didn't found block in db with height, we must find it,s
 				// ancestor
-				//pp.Println("block not found, with height: ", i, ", block.Cid: ", block.Cid)
-				if block.Cid == "" {
+				if block.Cid == "" || block == nil {
 					pp.Println("empty cid of block with height: ", i)
 					pp.Println("trying to retrieve from blockchain node")
 					missingTipset, ok := w.api.GetByHeight(abi.ChainEpoch(i))
 					if !ok {
 						pp.Println("w.api.GetByHeight is not OK, height: ", i)
 					}
-					blocks := pg.ParseBlocks(missingTipset)
-					pp.Println(blocks)
 					w.ss.BlocksService().Push(missingTipset.Blocks())
 					nextParentHeight := i + 1
 					parent, err := w.db.GetParentBlockByHeight(ctx, int64(nextParentHeight))
@@ -211,12 +241,13 @@ func (w *Watcher) checkBlockConsistency(ctx context.Context, fromHeight, toHeigh
 						i,
 						nextParentHeight,
 						nextBlock.Cid))
+					w.AddSkippedEntity(pg.Block{Height: int64(i)}, "block missing in DB and API")
 					continue
 				}
 				castedCID, err := cid.Cast([]byte(block.Cid))
 				if err != nil {
 					logrus.Error(err, ", cid.Cast : ", block.Cid)
-					return
+					continue
 				}
 				missingBlock := w.api.GetBlock(castedCID)
 				w.ss.BlocksService().Push([]*types.BlockHeader{missingBlock})
@@ -249,4 +280,88 @@ func (w *Watcher) checkBlockConsistency(ctx context.Context, fromHeight, toHeigh
 	}
 
 	//
+}
+
+func (w *Watcher) checkBlockConsistency(ctx context.Context, blockHeight int) {
+	block, err := w.db.GetBlockByHeight(ctx, int64(blockHeight))
+	if err != nil {
+		if strings.Contains(err.Error(), "no rows in result set") {
+			logrus.Warn("block not found, with height: ", blockHeight, "; trying to retrieve")
+			// as we didn't found block in db with height, we must find it,s
+			// ancestor
+			if block.Cid == "" || block == nil {
+				pp.Println("empty cid of block with height: ", blockHeight)
+				pp.Println("trying to retrieve from blockchain node")
+				missingTipset, ok := w.api.GetByHeight(abi.ChainEpoch(blockHeight))
+				if !ok {
+					pp.Println("w.api.GetByHeight is not OK, height: ", blockHeight)
+				}
+				w.ss.BlocksService().Push(missingTipset.Blocks())
+				nextParentHeight := blockHeight + 1
+				parent, err := w.db.GetParentBlockByHeight(ctx, int64(nextParentHeight))
+				if err != nil {
+					logrus.Error("can't find parent by height: ", nextParentHeight, err)
+					return
+				}
+				nextBlock, err := w.db.GetBlockByHeight(ctx, int64(nextParentHeight))
+				if err != nil {
+					logrus.Error("can't find parent by height: ", blockHeight, err)
+					return
+				}
+				logrus.Warn(fmt.Sprintf("parent cid: %s \n parent height: %d \n missing block height: %d \n,next existing block height: %d \n next existing block cid: %s \n",
+					parent.Cid,
+					parent.Height,
+					blockHeight,
+					nextParentHeight,
+					nextBlock.Cid))
+				w.AddSkippedEntity(pg.Block{Height: int64(blockHeight)}, "block missing in DB and API")
+				return
+			}
+			castedCID, err := cid.Cast([]byte(block.Cid))
+			if err != nil {
+				logrus.Error(err, ", cid.Cast : ", block.Cid)
+				return
+			}
+			missingBlock := w.api.GetBlock(castedCID)
+			w.ss.BlocksService().Push([]*types.BlockHeader{missingBlock})
+			return
+		}
+		//logrus.Error(err, ", bad block height: ", blockHeight)
+		return
+	}
+}
+
+func (w *Watcher) checkMessageConsistency(ctx context.Context, fromHeight, toHeight int) {
+
+	for i := fromHeight; i < w.cs.maxTipsetHeight; i++ {
+		defer func() {
+			w.SetLastCheckedHeight(i)
+		}()
+
+		block, err := w.db.GetBlockByHeight(ctx, int64(i))
+		if err != nil {
+			time.Sleep(1 * time.Second)
+			block, err = w.db.GetBlockByHeight(ctx, int64(i))
+			if err != nil {
+				logrus.Error("while checking messages, can't get block from DB by height: ", i, "; error: ", err)
+				continue
+			}
+			continue
+		}
+		_, err = w.db.GetMessageByBlockCid(ctx, block.Cid)
+		if err != nil {
+			if strings.Contains(err.Error(), "no rows in result set") {
+				castedCID, err := cid.Cast([]byte(block.Cid))
+				if err != nil {
+					logrus.Error(err, ", cid.Cast : ", castedCID)
+					continue
+				}
+				bMessages := w.api.GetBlockMessages(castedCID)
+				w.ss.MessagesService().Push(pg.ParseMessageExtended(bMessages.BlsMessages, block))
+				continue
+			}
+
+		}
+
+	}
 }
