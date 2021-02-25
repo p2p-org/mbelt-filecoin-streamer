@@ -24,4 +24,4 @@ WORKDIR /app
 COPY --from=builder /build/streamer /app/streamer
 
 # Command to run when starting the container
-CMD ["/app/streamer", "--sync-force"]
+CMD ["/app/streamer", "--sync"]

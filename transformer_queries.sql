@@ -18,14 +18,21 @@ FROM BLOCKS_STREAM EMIT CHANGES;
 
 CREATE STREAM MESSAGES_STREAM (
   "cid" VARCHAR,
+  "height" STRING,
   "block_cid" VARCHAR,
   "method" INTEGER,
+  "method_name" VARCHAR,
   "from" VARCHAR,
+  "from_id" VARCHAR,
+  "from_type" VARCHAR,
   "to" VARCHAR,
+  "to_id" VARCHAR,
+  "to_type" VARCHAR,
   "value" STRING,
   "gas_limit" BIGINT,
   "gas_premium" STRING,
   "gas_fee_cap" STRING,
+  "base_fee" STRING,
   "params" STRING,
   "data" VARCHAR,
   "block_time" BIGINT

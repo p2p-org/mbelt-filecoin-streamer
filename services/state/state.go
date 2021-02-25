@@ -87,6 +87,10 @@ func Init(config *config.Config, kafkaDs *datastore.KafkaDatastore, apiClient *c
 	}, nil
 }
 
+func (s *StateService) GetActor(addr address.Address, tsk *types.TipSetKey) *types.Actor {
+	return s.api.GetActor(addr, tsk)
+}
+
 func (s *StateService) GetChangedActors(start, end cid.Cid) map[string]types.Actor {
 	return s.api.GetChangedActors(start, end)
 }
@@ -113,6 +117,14 @@ func (s *StateService) GetMinerPower(actor address.Address, tsk types.TipSetKey)
 
 func (s *StateService) GetMinerSectors(actor address.Address, tsk types.TipSetKey) []*miner.SectorOnChainInfo {
 	return s.api.GetMinerSectors(actor, tsk)
+}
+
+func (s *StateService) LookupID(actor address.Address, tsk *types.TipSetKey) *address.Address {
+	return s.api.LookupID(actor, tsk)
+}
+
+func (s *StateService) AccountKey(actor address.Address, tsk *types.TipSetKey) *address.Address {
+	return s.api.AccountKey(actor, tsk)
 }
 
 func (s *StateService) PushActors(actors []*ActorInfo) {
@@ -183,7 +195,7 @@ func (s *StateService) PushMinersSectors(minersSectors []*MinerSector) {
 		if sector == nil {
 			continue
 		}
-		key := hex.EncodeToString(sha256.New().Sum([]byte(fmt.Sprintf("%s_%d", sector.Miner.String(), sector.Height))))
+		key := hex.EncodeToString(sha256.New().Sum([]byte(fmt.Sprintf("%s_%d_%d", sector.Miner.String(), sector.SectorNumber, sector.Height))))
 		m[key] = serializeMinerSector(sector, key)
 	}
 

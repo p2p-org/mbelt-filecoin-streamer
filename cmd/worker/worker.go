@@ -25,8 +25,8 @@ import (
 )
 
 const (
-	defaultHeight = 5000
-	batchCapacity = 5
+	defaultHeight           = 5000
+	batchCapacity           = 10
 
 	// current event is current head. We receive it once right after subscription on head updates
 	HeadEventCurrent = "current"
@@ -254,20 +254,48 @@ func getMessagesAndReceipts(tipSet *types.TipSet) (msgs []*messages.MessageExten
 		}
 
 		for _, msg := range blockMessages.BlsMessages {
+			fromId := lookupIdAddress(msg.From, nil)
+			toId   := lookupIdAddress(msg.To, nil)
+
+			fromType, _ := getAddressType(*fromId, nil)
+			toType, _   := getAddressType(*toId, nil)
+
+			methodName := getMethodName(toType, msg.Method)
 			msgs = append(msgs, &messages.MessageExtended{
-				Cid:       msg.Cid(),
-				BlockCid:  blockCid,
-				Message:   msg,
-				Timestamp: block.Timestamp,
+				Cid:           msg.Cid(),
+				Height:        block.Height,
+				BlockCid:      blockCid,
+				Message:       msg,
+				FromId:        fromId,
+				ToId:          toId,
+				FromType:      fromType,
+				ToType:        toType,
+				MethodName:    methodName,
+				ParentBaseFee: block.ParentBaseFee,
+				Timestamp:     block.Timestamp,
 			})
 		}
 
 		for _, msg := range blockMessages.SecpkMessages {
+			fromId := lookupIdAddress(msg.Message.From, nil)
+			toId   := lookupIdAddress(msg.Message.To, nil)
+
+			fromType, _ := getAddressType(*fromId, nil)
+			toType, _   := getAddressType(*toId, nil)
+
+			methodName := getMethodName(toType, msg.Message.Method)
 			msgs = append(msgs, &messages.MessageExtended{
-				Cid:       msg.Cid(),
-				BlockCid:  blockCid,
-				Message:   &msg.Message,
-				Timestamp: block.Timestamp,
+				Cid:           msg.Cid(),
+				Height:        block.Height,
+				BlockCid:      blockCid,
+				Message:       &msg.Message,
+				FromId:        fromId,
+				ToId:          toId,
+				FromType:      fromType,
+				ToType:        toType,
+				MethodName:    methodName,
+				ParentBaseFee: block.ParentBaseFee,
+				Timestamp:     block.Timestamp,
 			})
 		}
 
@@ -285,12 +313,6 @@ func collectActorChanges(tipset *types.TipSet) (out []*state.ActorInfo, nullRoun
 			"miner info count:", len(minerInfo), "miner sectors count:", len(minerSectors), "reward actor:", reward != nil)
 	}()
 
-	miners := services.App().StateService().ListMiners(tipset.Key())
-	minersMap := make(map[address.Address]struct{}, len(miners))
-	for _, miner := range miners {
-		minersMap[miner] = struct{}{}
-	}
-
 	parentTipSet := services.App().TipSetsService().GetByKey(tipset.Parents())
 	if parentTipSet == nil {
 		log.Println("[App][Debug][collectActorChanges] parent is nil. height: ", tipset.Height())
@@ -298,6 +320,7 @@ func collectActorChanges(tipset *types.TipSet) (out []*state.ActorInfo, nullRoun
 	}
 	if parentTipSet.ParentState().Equals(tipset.ParentState()) {
 		nullRounds = append(nullRounds, parentTipSet.Key())
+		// TODO: probably need to return here
 	}
 
 	// collect all actors that had state changes between the tipset's parent-state and its grandparent-state.
@@ -326,26 +349,31 @@ func collectActorChanges(tipset *types.TipSet) (out []*state.ActorInfo, nullRoun
 			continue
 		}
 
+		actorName := builtin.ActorNameByCode(act.Code)
+		addAddressType(addr, actorName)
+
 		// miner info collection
-		if _, ok := minersMap[addr]; ok {
+		if actorName == actorNameMiner {
+			// TODO: If we collect actor changes once every n epochs, we cant see miner power changes for every epoch, only for one
 			info := services.App().StateService().GetMinerInfo(addr, tipset.Key())
 			power := services.App().StateService().GetMinerPower(addr, tipset.Key())
-			sectors := services.App().StateService().GetMinerSectors(addr, tipset.Key())
+			// removed miners sectors collection because it takes too much resources to collect it like it's implemented here
+			//sectors := services.App().StateService().GetMinerSectors(addr, tipset.Key())
 			minerInfo = append(minerInfo, &state.MinerInfo{
 				MinerInfo:  info,
 				MinerPower: power,
 				Miner:      addr,
 				Height:     tipset.Height(),
 			})
-			for _, sector := range sectors {
-				minerSectors = append(minerSectors, &state.MinerSector{
-					SectorOnChainInfo: sector,
-					Miner:             addr,
-					Height:            tipset.Height(),
-				})
-			}
+			//for _, sector := range sectors {
+			//	minerSectors = append(minerSectors, &state.MinerSector{
+			//		SectorOnChainInfo: sector,
+			//		Miner:             addr,
+			//		Height:            tipset.Height(),
+			//	})
+			//}
 			// We can skip the rest of loop if we don't want miner's account states to be collected.
-			// continue
+			//continue
 		}
 
 		ast := services.App().StateService().ReadState(addr, parentTipSet.Key())
@@ -480,16 +508,16 @@ func collectAndPushOtherEntitiesByTipSet(tipset *tipsets.TipSetWithState) {
 	services.App().TipSetsService().Push(tipset)
 	services.App().BlocksService().Push(tipset.Blocks())
 
+	// ignoring null rounds and sectors
+	changes, _, minersInfo, _, rewardStates := collectActorChanges(tipset.TipSet)
+	services.App().StateService().PushActors(changes)
+	services.App().StateService().PushMinersInfo(minersInfo)
+	//services.App().StateService().PushMinersSectors(minersSectors)
+	services.App().StateService().PushRewardActorStates(rewardStates)
+
 	msgs, receipts := getMessagesAndReceipts(tipset.TipSet)
 	services.App().MessagesService().Push(msgs)
 	services.App().MessagesService().PushReceipts(receipts)
-
-	// ignoring null rounds
-	changes, _, minersInfo, minersSectors, rewardStates := collectActorChanges(tipset.TipSet)
-	services.App().StateService().PushActors(changes)
-	services.App().StateService().PushMinersInfo(minersInfo)
-	services.App().StateService().PushMinersSectors(minersSectors)
-	services.App().StateService().PushRewardActorStates(rewardStates)
 }
 
 func gracefulStop(syncCancel, updCancel context.CancelFunc) {

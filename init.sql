@@ -20,15 +20,22 @@ CREATE TABLE IF NOT EXISTS filecoin.blocks
 CREATE TABLE IF NOT EXISTS filecoin.messages
 (
     "cid"         VARCHAR(256) NOT NULL PRIMARY KEY,
+    "height"      BIGINT,
     "block_cid"   VARCHAR(256),
     "method"      INT,
+    "method_name" VARCHAR(128),
     "from"        VARCHAR(256),
+    "from_id"     VARCHAR(256),
+    "from_type"   VARCHAR(256),
     "to"          VARCHAR(256),
+    "to_id"       VARCHAR(256),
+    "to_type"     VARCHAR(256),
     "value"       DECIMAL(100, 0),
     "gas_limit"   BIGINT,
     "gas_premium" DECIMAL(100, 0),
     "gas_fee_cap" DECIMAL(100, 0),
     "gas_used"    BIGINT,
+    "base_fee"    DECIMAL(100, 0),
     "exit_code"   INT,
     "return"      TEXT,
     "params"      TEXT,
@@ -49,8 +56,8 @@ CREATE TABLE IF NOT EXISTS filecoin.tipsets
 
 CREATE TABLE IF NOT EXISTS filecoin.actor_states
 (
-    "actor_state_key"  VARCHAR(512) NOT NULL PRIMARY KEY,
-    "actor_code"       VARCHAR(512),
+    "actor_state_key"  TEXT NOT NULL PRIMARY KEY,
+    "actor_code"       VARCHAR(256),
     "actor_head"       VARCHAR(256),
     "nonce"            DECIMAL(100, 0),
     "balance"          DECIMAL(100, 0),
@@ -154,14 +161,21 @@ CREATE TABLE IF NOT EXISTS filecoin._blocks
 CREATE TABLE IF NOT EXISTS filecoin._messages
 (
     "cid"         VARCHAR(256) NOT NULL PRIMARY KEY,
+    "height"      TEXT,
     "block_cid"   VARCHAR(256),
     "method"      INT,
+    "method_name" VARCHAR(128),
     "from"        VARCHAR(256),
+    "from_id"     VARCHAR(256),
+    "from_type"   VARCHAR(256),
     "to"          VARCHAR(256),
+    "to_id"       VARCHAR(256),
+    "to_type"     VARCHAR(256),
     "value"       TEXT,
     "gas_limit"   BIGINT,
     "gas_premium" TEXT,
     "gas_fee_cap" TEXT,
+    "base_fee"    TEXT,
     "params"      TEXT,
     "data"        TEXT,
     "block_time"  BIGINT
@@ -199,7 +213,7 @@ CREATE TABLE IF NOT EXISTS filecoin._tipsets_to_revert
 
 CREATE TABLE IF NOT EXISTS filecoin._actor_states
 (
-    "actor_state_key"  VARCHAR(512) NOT NULL PRIMARY KEY,
+    "actor_state_key"  TEXT NOT NULL PRIMARY KEY,
     "actor_code"       VARCHAR(256),
     "actor_head"       VARCHAR(256),
     "nonce"            TEXT,
@@ -381,26 +395,40 @@ CREATE OR REPLACE FUNCTION filecoin.sink_messages_insert()
 $$
 BEGIN
     INSERT INTO filecoin.messages("cid",
+                                  "height",
                                   "block_cid",
                                   "method",
+                                  "method_name",
                                   "from",
+                                  "from_id",
+                                  "from_type",
                                   "to",
+                                  "to_id",
+                                  "to_type",
                                   "value",
                                   "gas_limit",
                                   "gas_premium",
                                   "gas_fee_cap",
+                                  "base_fee",
                                   "params",
                                   "data",
                                   "block_time")
     VALUES (NEW."cid",
+            NEW."height"::BIGINT,
             NEW."block_cid",
             NEW."method",
+            NEW."method_name",
             NEW."from",
+            NEW."from_id",
+            NEW.from_type,
             NEW."to",
+            NEW."to_id",
+            NEW.to_type,
             NEW."value"::DECIMAL(100, 0),
             NEW."gas_limit",
             NEW.gas_premium::DECIMAL(100, 0),
             NEW.gas_fee_cap::DECIMAL(100, 0),
+            NEW.base_fee::DECIMAL(100, 0),
             NEW."params",
             NEW."data"::jsonb,
             to_timestamp(NEW."block_time"))
@@ -809,6 +837,7 @@ EXECUTE PROCEDURE filecoin.sink_trim_reward_actor_states_after_insert();
 -- Create indexes
 
 CREATE INDEX filecoin_block_height_idx ON filecoin.blocks ("height");
+CREATE INDEX filecoin_message_height_idx ON filecoin.messages ("height");
 CREATE INDEX filecoin_actor_states_height_idx ON filecoin.actor_states ("height");
 CREATE INDEX filecoin_actor_states_addr_idx ON filecoin.actor_states ("addr");
 CREATE INDEX filecoin_miner_infos_height_idx ON filecoin.miner_infos ("height");
@@ -816,7 +845,7 @@ CREATE INDEX filecoin_miner_infos_miner_idx ON filecoin.miner_infos ("miner");
 CREATE INDEX filecoin_miner_sectors_height_idx ON filecoin.miner_sectors ("height");
 CREATE INDEX filecoin_miner_sectors_miner_idx ON filecoin.miner_sectors ("miner");
 
--- tmp
+
 CREATE INDEX filecoin_block_cid_idx ON filecoin.blocks ("cid");
 CREATE INDEX filecoin_messages_cid_idx ON filecoin.messages ("cid");
 

@@ -1,4 +1,4 @@
-version: '3'
+version: '3.4'
 x-redash-environment: &redash-environment
   REDASH_LOG_LEVEL: "INFO"
   REDASH_REDIS_URL: redis://redis:6379/0
@@ -248,7 +248,7 @@ services:
 
   redash-server:
     image: redash/redash:latest
-    command: dev_server
+    command: server
     depends_on:
       - db
       - redis
@@ -260,14 +260,14 @@ services:
       PYTHONUNBUFFERED: 0
   redash-scheduler:
     image: redash/redash:latest
-    command: dev_scheduler
+    command: scheduler
     depends_on:
       - redash-server
     environment:
       <<: *redash-environment
   redash-worker:
     image: redash/redash:latest
-    command: dev_worker
+    command: worker
     depends_on:
       - redash-server
     environment:

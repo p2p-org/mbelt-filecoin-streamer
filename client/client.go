@@ -478,6 +478,47 @@ func (c *APIClient) ChainHasObjHttp(cid cid.Cid) (bool, error) {
 	return resp.Result, nil
 }
 
+func (c *APIClient) GetActor(addr address.Address, tsk *types.TipSetKey) *types.Actor {
+	client := c.wsClientPool.Get()
+	resp := &Actor{}
+	var err error
+	if tsk == nil {
+		err = client.Do(StateGetActor, []interface{}{addr, nil}, resp)
+	} else {
+		err = client.Do(StateGetActor, []interface{}{addr, *tsk}, resp)
+	}
+	if err != nil {
+		return nil
+	}
+
+	c.wsClientPool.Put(client)
+
+	if resp.Error != nil {
+		log.Println("[API][Error][GetActor]", resp.Error.Message)
+		return nil
+	}
+	return resp.Result
+}
+
+func (c *APIClient) GetActorHttp(addr address.Address, tsk *types.TipSetKey) *types.Actor {
+	resp := &Actor{}
+	var err error
+	if tsk == nil {
+		err = c.do(StateChangedActors, []interface{}{addr, nil}, resp)
+	} else {
+		err = c.do(StateChangedActors, []interface{}{addr, *tsk}, resp)
+	}
+	if err != nil {
+		return nil
+	}
+
+	if resp.Error != nil {
+		log.Println("[API][Error][GetActor]", resp.Error.Message)
+		return nil
+	}
+	return resp.Result
+}
+
 func (c *APIClient) GetChangedActors(start, end cid.Cid) map[string]types.Actor {
 	client := c.wsClientPool.Get()
 	resp := &Actors{}
@@ -662,4 +703,86 @@ func (c *APIClient) GetMinerSectorsHttp(actor address.Address, tsk types.TipSetK
 		return nil
 	}
 	return resp.Result
+}
+
+func (c *APIClient) LookupID(actor address.Address, tsk *types.TipSetKey) *address.Address {
+	client := c.wsClientPool.Get()
+	resp := &AddressResponse{}
+	var err error
+	if tsk == nil {
+		err = client.Do(StateLookupID, []interface{}{actor, nil}, resp)
+	} else {
+		err = client.Do(StateLookupID, []interface{}{actor, *tsk}, resp)
+	}
+	if err != nil {
+		return nil
+	}
+
+	c.wsClientPool.Put(client)
+
+	if resp.Error != nil {
+		log.Println("[API][Error][LookupID]", resp.Error.Message)
+		return nil
+	}
+	return &resp.Result
+}
+
+func (c *APIClient) LookupIDHttp(actor address.Address, tsk *types.TipSetKey) *address.Address {
+	resp := &AddressResponse{}
+	var err error
+	if tsk != nil {
+		err = c.do(StateLookupID, []interface{}{actor, nil}, resp)
+	} else {
+		err = c.do(StateLookupID, []interface{}{actor, *tsk}, resp)
+	}
+	if err != nil {
+		return nil
+	}
+
+	if resp.Error != nil {
+		log.Println("[API][Error][LookupID]", resp.Error.Message)
+		return nil
+	}
+	return &resp.Result
+}
+
+func (c *APIClient) AccountKey(actor address.Address, tsk *types.TipSetKey) *address.Address {
+	client := c.wsClientPool.Get()
+	resp := &AddressResponse{}
+	var err error
+	if tsk == nil {
+		err = client.Do(StateAccountKey, []interface{}{actor, nil}, resp)
+	} else {
+		err = client.Do(StateAccountKey, []interface{}{actor, *tsk}, resp)
+	}
+	if err != nil {
+		return nil
+	}
+
+	c.wsClientPool.Put(client)
+
+	if resp.Error != nil {
+		log.Println("[API][Error][AccountKey]", resp.Error.Message)
+		return nil
+	}
+	return &resp.Result
+}
+
+func (c *APIClient) AccountKeyHttp(actor address.Address, tsk *types.TipSetKey) *address.Address {
+	resp := &AddressResponse{}
+	var err error
+	if tsk == nil {
+		err = c.do(StateAccountKey, []interface{}{actor, nil}, resp)
+	} else {
+		err = c.do(StateAccountKey, []interface{}{actor, *tsk}, resp)
+	}
+	if err != nil {
+		return nil
+	}
+
+	if resp.Error != nil {
+		log.Println("[API][Error][AccountKey]", resp.Error.Message)
+		return nil
+	}
+	return &resp.Result
 }

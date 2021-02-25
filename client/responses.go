@@ -22,12 +22,15 @@ const (
 	ChainNotify            = "Filecoin.ChainNotify"
 	ChainHasObj            = "Filecoin.ChainHasObj"
 
+	StateGetActor          = "Filecoin.StateGetActor"
 	StateChangedActors     = "Filecoin.StateChangedActors"
 	StateReadState         = "Filecoin.StateReadState"
 	StateListMiners        = "Filecoin.StateListMiners"
 	StateMinerInfo         = "Filecoin.StateMinerInfo"
 	StateMinerPower        = "Filecoin.StateMinerPower"
 	StateMinerSectors      = "Filecoin.StateMinerSectors"
+	StateLookupID          = "Filecoin.StateLookupID"
+	StateAccountKey        = "Filecoin.StateAccountKey"
 )
 
 type TipSet struct {
@@ -65,6 +68,11 @@ type MessageReceiptResponse struct {
 	Result []*types.MessageReceipt `json:"result"` // payload
 }
 
+type Actor struct {
+	APIResponse
+	Result *types.Actor `json:"result"` // payload
+}
+
 type Actors struct {
 	APIResponse
 	Result map[string]types.Actor `json:"result"` // payload
@@ -78,6 +86,11 @@ type HasObj struct {
 type ActorStateResponse struct {
 	APIResponse
 	Result *ActorState `json:"result"` // payload
+}
+
+type AddressResponse struct {
+	APIResponse
+	Result address.Address
 }
 
 type AddressListResponse struct {
