@@ -147,7 +147,7 @@ func getAddressType(addr address.Address, tsk *types.TipSetKey) (string, error) 
 		return "", errors.New("address should be of id protocol")
 	}
 
-	raw, ok := addressMap.Load(addr.String())
+	raw, ok := addressIdToTypeMap.Load(addr.String())
 	if ok {
 		switch raw.(type) {
 		case string:

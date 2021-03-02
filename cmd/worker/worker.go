@@ -19,6 +19,7 @@ import (
 	"os"
 	"os/signal"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"time"
 	"unsafe"
@@ -26,7 +27,7 @@ import (
 
 const (
 	defaultHeight           = 5000
-	batchCapacity           = 10
+	batchCapacity uint32    = 10
 
 	// current event is current head. We receive it once right after subscription on head updates
 	HeadEventCurrent = "current"
@@ -38,7 +39,9 @@ func Start(conf *config.Config, sync bool, syncForce bool, updHead bool, syncFro
 	exitCode := 0
 	defer os.Exit(exitCode)
 
-	err := services.InitServices(conf)
+	kafkaCtx, kafkaCancel := context.WithCancel(context.Background())
+
+	err := services.InitServices(conf, kafkaCtx)
 	if err != nil {
 		log.Println("[App][Debug]", "Cannot init services:", err)
 		exitCode = 1
@@ -48,7 +51,7 @@ func Start(conf *config.Config, sync bool, syncForce bool, updHead bool, syncFro
 	syncCtx, syncCancel := context.WithCancel(context.Background())
 	updCtx, updCancel := context.WithCancel(context.Background())
 
-	go gracefulStop(syncCancel, updCancel)
+	go gracefulStop(syncCancel, updCancel, kafkaCancel)
 
 	if syncForce {
 		syncToHead(0, syncCtx)
@@ -82,6 +85,8 @@ func Start(conf *config.Config, sync bool, syncForce bool, updHead bool, syncFro
 }
 
 func updateHeads(ctx context.Context) {
+	log.Println("[App][Debug][updateHeads]", "subscribing on head updates...")
+
 	headUpdatesCtx, cancelHeadUpdates := context.WithCancel(ctx)
 	// Buffer is that big for channel to be able to store some head updates while we are syncing till "current" block
 	// TODO: This approach is not solid. Think how we can do it better.
@@ -164,16 +169,27 @@ func syncTo(from int, to int, ctx context.Context) {
 		services.App().BlocksService().Push(genesis.Blocks())
 	}
 
+	wg := sync.WaitGroup{}
+	var runningWorkers uint32
+
 	for height := startHeight; height < syncHeight; {
 		select {
-		default:
-			wg := sync.WaitGroup{}
-			wg.Add(batchCapacity)
+		case <-ctx.Done():
+			wg.Wait()
+			return
 
-			for workers := 0; workers < batchCapacity; workers++ {
+		default:
+
+			if atomic.LoadUint32(&runningWorkers) < batchCapacity {
+
+				atomic.AddUint32(&runningWorkers, 1)
+				wg.Add(1)
 
 				go func(height abi.ChainEpoch) {
-					defer wg.Done()
+					defer func() {
+						atomic.AddUint32(&runningWorkers, ^uint32(0))
+						wg.Done()
+					}()
 					tipSet, nullRound := syncTipSetForHeight(height)
 
 					if tipSet == nil {
@@ -182,7 +198,6 @@ func syncTo(from int, to int, ctx context.Context) {
 					}
 
 					if nullRound {
-						tipSet.State = tipsets.StateNull
 						services.App().TipSetsService().Push(tipSet)
 						return
 					}
@@ -192,10 +207,6 @@ func syncTo(from int, to int, ctx context.Context) {
 
 				height++
 			}
-
-			wg.Wait()
-		case <-ctx.Done():
-			return
 		}
 	}
 }
@@ -257,8 +268,13 @@ func getMessagesAndReceipts(tipSet *types.TipSet) (msgs []*messages.MessageExten
 			fromId := lookupIdAddress(msg.From, nil)
 			toId   := lookupIdAddress(msg.To, nil)
 
-			fromType, _ := getAddressType(*fromId, nil)
-			toType, _   := getAddressType(*toId, nil)
+			var fromType, toType string
+			if fromId != nil {
+				fromType, _ = getAddressType(*fromId, nil)
+			}
+			if toId != nil {
+				toType, _   = getAddressType(*toId, nil)
+			}
 
 			methodName := getMethodName(toType, msg.Method)
 			msgs = append(msgs, &messages.MessageExtended{
@@ -268,8 +284,8 @@ func getMessagesAndReceipts(tipSet *types.TipSet) (msgs []*messages.MessageExten
 				Message:       msg,
 				FromId:        fromId,
 				ToId:          toId,
-				FromType:      fromType,
-				ToType:        toType,
+				FromType:      addrTypeToHuman(fromType),
+				ToType:        addrTypeToHuman(toType),
 				MethodName:    methodName,
 				ParentBaseFee: block.ParentBaseFee,
 				Timestamp:     block.Timestamp,
@@ -280,8 +296,13 @@ func getMessagesAndReceipts(tipSet *types.TipSet) (msgs []*messages.MessageExten
 			fromId := lookupIdAddress(msg.Message.From, nil)
 			toId   := lookupIdAddress(msg.Message.To, nil)
 
-			fromType, _ := getAddressType(*fromId, nil)
-			toType, _   := getAddressType(*toId, nil)
+			var fromType, toType string
+			if fromId != nil {
+				fromType, _ = getAddressType(*fromId, nil)
+			}
+			if toId != nil {
+				toType, _   = getAddressType(*toId, nil)
+			}
 
 			methodName := getMethodName(toType, msg.Message.Method)
 			msgs = append(msgs, &messages.MessageExtended{
@@ -291,8 +312,8 @@ func getMessagesAndReceipts(tipSet *types.TipSet) (msgs []*messages.MessageExten
 				Message:       &msg.Message,
 				FromId:        fromId,
 				ToId:          toId,
-				FromType:      fromType,
-				ToType:        toType,
+				FromType:      addrTypeToHuman(fromType),
+				ToType:        addrTypeToHuman(toType),
 				MethodName:    methodName,
 				ParentBaseFee: block.ParentBaseFee,
 				Timestamp:     block.Timestamp,
@@ -520,7 +541,7 @@ func collectAndPushOtherEntitiesByTipSet(tipset *tipsets.TipSetWithState) {
 	services.App().MessagesService().PushReceipts(receipts)
 }
 
-func gracefulStop(syncCancel, updCancel context.CancelFunc) {
+func gracefulStop(syncCancel, updCancel, kafkaCancel context.CancelFunc) {
 	var gracefulStop = make(chan os.Signal)
 	signal.Notify(gracefulStop, syscall.SIGTERM)
 	signal.Notify(gracefulStop, syscall.SIGINT)
@@ -531,4 +552,5 @@ func gracefulStop(syncCancel, updCancel context.CancelFunc) {
 	log.Println("Wait for graceful shutdown to finish.")
 	syncCancel()
 	updCancel()
+	kafkaCancel()
 }
