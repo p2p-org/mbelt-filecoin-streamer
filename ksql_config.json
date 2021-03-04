@@ -1,0 +1,132 @@
+{
+  "topics": [
+    {
+      "name": "BLOCKS_STREAM"
+    },
+    {
+      "name": "MESSAGES_STREAM"
+    },
+    {
+      "name": "MESSAGE_RECEIPTS_STREAM"
+    },
+    {
+      "name": "TIPSETS_STREAM"
+    },
+    {
+      "name": "TIPSETS_TO_REVERT_STREAM"
+    },
+    {
+      "name": "ACTOR_STATES_STREAM"
+    },
+    {
+      "name": "MINER_INFOS_STREAM"
+    },
+    {
+      "name": "MINER_SECTORS_STREAM"
+    },
+    {
+      "name": "REWARD_ACTOR_STATES_STREAM"
+    }
+  ],
+  "connectors": [
+    {
+      "name": "{APP_PREFIX}_actor_states_stream_avro_sink",
+      "config": {
+        "topics": "{APP_PREFIX}_ACTOR_STATES_STREAM_AVRO",
+        "insert.mode": "INSERT",
+        "table.name.format": "filecoin._actor_states",
+        "pk.mode": "record_value",
+        "pk.fields": "id",
+        "errors.tolerance": "all"
+      }
+    },
+    {
+      "name": "{APP_PREFIX}_blocks_stream_avro_sink",
+      "config": {
+        "topics": "{APP_PREFIX}_BLOCKS_STREAM_AVRO",
+        "insert.mode": "INSERT",
+        "table.name.format": "filecoin._blocks",
+        "pk.mode": "record_value",
+        "pk.fields": "cid",
+        "errors.tolerance": "all"
+      }
+    },
+    {
+      "name": "{APP_PREFIX}_message_receipts_stream_avro_sink",
+      "config": {
+        "topics": "{APP_PREFIX}_MESSAGE_RECEIPTS_STREAM_AVRO",
+        "insert.mode": "INSERT",
+        "table.name.format": "filecoin._message_receipts",
+        "pk.mode": "record_value",
+        "pk.fields": "cid",
+        "errors.tolerance": "all"
+      }
+    },
+    {
+      "name": "{APP_PREFIX}_messages_stream_avro_sink",
+      "config": {
+        "topics": "{APP_PREFIX}_MESSAGES_STREAM_AVRO",
+        "insert.mode": "INSERT",
+        "table.name.format": "filecoin._messages",
+        "pk.mode": "record_value",
+        "pk.fields": "cid",
+        "errors.tolerance": "all"
+      }
+    },
+    {
+      "name": "{APP_PREFIX}_miner_infos_stream_avro_sink",
+      "config": {
+        "topics": "{APP_PREFIX}_MINER_INFOS_STREAM_AVRO",
+        "insert.mode": "INSERT",
+        "table.name.format": "filecoin._miner_infos",
+        "pk.mode": "record_value",
+        "pk.fields": "miner_info_key",
+        "errors.tolerance": "all"
+      }
+    },
+    {
+      "name": "{APP_PREFIX}_miner_sectors_stream_avro_sink",
+      "config": {
+        "topics": "{APP_PREFIX}_MINER_SECTORS_STREAM_AVRO",
+        "insert.mode": "INSERT",
+        "table.name.format": "filecoin._miner_sectors",
+        "pk.mode": "record_value",
+        "pk.fields": "miner_sector_key",
+        "errors.tolerance": "all"
+      }
+    },
+    {
+      "name": "{APP_PREFIX}_reward_actor_states_stream_avro_sink",
+      "config": {
+        "topics": "{APP_PREFIX}_REWARD_ACTOR_STATES_STREAM_AVRO",
+        "insert.mode": "INSERT",
+        "table.name.format": "filecoin._reward_actor_states",
+        "pk.mode": "epoch",
+        "pk.fields": "miner_sector_key",
+        "errors.tolerance": "all"
+      }
+    },
+    {
+      "name": "{APP_PREFIX}_tipsets_stream_avro_sink",
+      "config": {
+        "topics": "{APP_PREFIX}_TIPSETS_STREAM_AVRO",
+        "insert.mode": "INSERT",
+        "table.name.format": "filecoin._tipsets",
+        "pk.mode": "height",
+        "pk.fields": "miner_sector_key",
+        "errors.tolerance": "all"
+      }
+    },
+    {
+      "name": "{APP_PREFIX}_tipsets_to_revert_stream_avro_sink",
+      "config": {
+        "topics": "{APP_PREFIX}_TIPSETS_TO_REVERT_STREAM_AVRO",
+        "insert.mode": "INSERT",
+        "table.name.format": "filecoin._tipsets_to_revert",
+        "pk.mode": "cid",
+        "pk.fields": "miner_sector_key",
+        "errors.tolerance": "all"
+      }
+    }
+  ]
+}
