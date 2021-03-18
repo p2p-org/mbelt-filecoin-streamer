@@ -1,0 +1,18 @@
+{
+  "name": "integrity-tester",
+  "version": "1.0.0",
+  "description": "FileCoin tests",
+  "repository": "",
+  "author": "Vladislav Kuchinsky",
+  "scripts": {
+    "test": "mocha ./test/test.js"
+  },
+  "dependencies": {},
+  "devDependencies": {
+    "axios": "^0.21.1",
+    "dotenv": "^8.2.0",
+    "filecoin.js": "0.0.5-alpha",
+    "mocha": "^8.3.0",
+    "pg": "^8.5.1"
+  }
+}
