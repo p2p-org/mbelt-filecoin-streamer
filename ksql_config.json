@@ -36,7 +36,7 @@
         "insert.mode": "INSERT",
         "table.name.format": "filecoin._actor_states",
         "pk.mode": "record_value",
-        "pk.fields": "id",
+        "pk.fields": "actor_state_key",
         "errors.tolerance": "all"
       }
     },
@@ -101,8 +101,8 @@
         "topics": "{APP_PREFIX}_REWARD_ACTOR_STATES_STREAM_AVRO",
         "insert.mode": "INSERT",
         "table.name.format": "filecoin._reward_actor_states",
-        "pk.mode": "epoch",
-        "pk.fields": "miner_sector_key",
+        "pk.mode": "record_value",
+        "pk.fields": "epoch",
         "errors.tolerance": "all"
       }
     },
@@ -112,8 +112,8 @@
         "topics": "{APP_PREFIX}_TIPSETS_STREAM_AVRO",
         "insert.mode": "INSERT",
         "table.name.format": "filecoin._tipsets",
-        "pk.mode": "height",
-        "pk.fields": "miner_sector_key",
+        "pk.mode": "record_value",
+        "pk.fields": "height",
         "errors.tolerance": "all"
       }
     },
@@ -123,8 +123,8 @@
         "topics": "{APP_PREFIX}_TIPSETS_TO_REVERT_STREAM_AVRO",
         "insert.mode": "INSERT",
         "table.name.format": "filecoin._tipsets_to_revert",
-        "pk.mode": "cid",
-        "pk.fields": "miner_sector_key",
+        "pk.mode": "record_value",
+        "pk.fields": "cid",
         "errors.tolerance": "all"
       }
     }

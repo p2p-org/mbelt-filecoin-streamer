@@ -1,9 +1,11 @@
 package config
 
 type Config struct {
-	APIUrl     string
-	APIWsUrl   string
-	APIToken   string
-	KafkaHosts string
-	PgUrl      string
+	APIUrl          string
+	APIWsUrl        string
+	APIToken        string
+	KafkaPrefix     string
+	KafkaHosts      string
+	KafkaAsyncWrite bool
+	PgUrl           string
 }

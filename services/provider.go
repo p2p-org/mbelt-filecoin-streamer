@@ -17,11 +17,13 @@ var (
 )
 
 type ServiceProvider struct {
+	syncService      *SyncService
 	blocksService    *blocks.BlocksService
 	messagesService  *messages.MessagesService
 	tipsetsService   *tipsets.TipSetsService
 	processorService *processor.ProcessorService
 	stateService     *state.StateService
+	pgDatastore      *pg.PgDatastore
 }
 
 func (p *ServiceProvider) Init(config *config.Config, kafkaDs *datastore.KafkaDatastore, pgDs *pg.PgDatastore, apiClient *client.APIClient) error {
@@ -57,7 +59,19 @@ func (p *ServiceProvider) Init(config *config.Config, kafkaDs *datastore.KafkaDa
 		return err
 	}
 
+	p.syncService, err = Init(config, kafkaDs)
+
+	if err != nil {
+		return err
+	}
+
+	p.pgDatastore = pgDs
+
 	return nil
+}
+
+func (p *ServiceProvider) SyncService() *SyncService {
+	return p.syncService
 }
 
 func (p *ServiceProvider) BlocksService() *blocks.BlocksService {
@@ -78,6 +92,10 @@ func (p *ServiceProvider) ProcessorService() *processor.ProcessorService {
 
 func (p *ServiceProvider) StateService() *state.StateService {
 	return p.stateService
+}
+
+func (p *ServiceProvider) PgDatastore() *pg.PgDatastore {
+	return p.pgDatastore
 }
 
 func App() *ServiceProvider {

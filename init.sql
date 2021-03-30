@@ -57,15 +57,15 @@ CREATE TABLE IF NOT EXISTS filecoin.tipsets
 CREATE TABLE IF NOT EXISTS filecoin.actor_states
 (
     "actor_state_key"  TEXT NOT NULL PRIMARY KEY,
-    "actor_code"       VARCHAR(256),
-    "actor_head"       VARCHAR(256),
+    "actor_code"       TEXT,
+    "actor_head"       TEXT,
     "nonce"            DECIMAL(100, 0),
     "balance"          DECIMAL(100, 0),
-    "state_root"       VARCHAR(256),
+    "state_root"       TEXT,
     "height"           BIGINT,
     "ts_key"           TEXT,
     "parent_ts_key"    TEXT,
-    "addr"             VARCHAR(128),
+    "addr"             VARCHAR(512),
     "state"            JSONB,
     "deleted"          BOOLEAN
 );
@@ -214,15 +214,15 @@ CREATE TABLE IF NOT EXISTS filecoin._tipsets_to_revert
 CREATE TABLE IF NOT EXISTS filecoin._actor_states
 (
     "actor_state_key"  TEXT NOT NULL PRIMARY KEY,
-    "actor_code"       VARCHAR(256),
-    "actor_head"       VARCHAR(256),
+    "actor_code"       TEXT,
+    "actor_head"       TEXT,
     "nonce"            TEXT,
     "balance"          TEXT,
-    "state_root"       VARCHAR(256),
+    "state_root"       TEXT,
     "height"           TEXT,
     "ts_key"           TEXT,
     "parent_ts_key"    TEXT,
-    "addr"             VARCHAR(128),
+    "addr"             VARCHAR(512),
     "state"            TEXT,
     "deleted"          BOOLEAN
 );

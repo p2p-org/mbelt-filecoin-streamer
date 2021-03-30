@@ -1,6 +1,7 @@
 package tipsets
 
 import (
+	"context"
 	"github.com/filecoin-project/go-state-types/abi"
 	"github.com/filecoin-project/lotus/chain/types"
 	"github.com/p2p-org/mbelt-filecoin-streamer/client"
@@ -52,19 +53,19 @@ func (s *TipSetsService) GetByKey(key types.TipSetKey) *types.TipSet {
 	return s.api.GetByKey(key)
 }
 
-func (s *TipSetsService) PushTipSetsToRevert(tipset *TipSetWithState) {
-	s.push(datastore.TopicTipsetsToRevert, tipset)
+func (s *TipSetsService) PushTipSetsToRevert(tipset *TipSetWithState, ctx context.Context) {
+	s.push(datastore.TopicTipsetsToRevert, tipset, ctx)
 }
 
-func (s *TipSetsService) Push(tipset *TipSetWithState) {
-	s.push(datastore.TopicTipSets, tipset)
+func (s *TipSetsService) Push(tipset *TipSetWithState, ctx context.Context) {
+	s.push(datastore.TopicTipSets, tipset, ctx)
 }
 
-func (s *TipSetsService) PushNormalState(tipset *types.TipSet) {
-	s.push(datastore.TopicTipSets, &TipSetWithState{tipset, StateNormal})
+func (s *TipSetsService) PushNormalState(tipset *types.TipSet, ctx context.Context) {
+	s.push(datastore.TopicTipSets, &TipSetWithState{tipset, StateNormal}, ctx)
 }
 
-func (s *TipSetsService) push(topic string, tipset *TipSetWithState) {
+func (s *TipSetsService) push(topic string, tipset *TipSetWithState, ctx context.Context) {
 	defer func() {
 		if r := recover(); r != nil {
 			log.Println("[TipSetsService][Recover]", "Throw panic", r)
@@ -75,7 +76,7 @@ func (s *TipSetsService) push(topic string, tipset *TipSetWithState) {
 		tipset.Height().String(): serializeTipSet(tipset),
 	}
 
-	s.ds.Push(topic, m)
+	s.ds.Push(topic, m, ctx)
 }
 
 func serializeTipSet(tipset *TipSetWithState) map[string]interface{} {

@@ -6,14 +6,14 @@ import (
 	"errors"
 	"github.com/p2p-org/mbelt-filecoin-streamer/config"
 	"github.com/segmentio/kafka-go"
+	"github.com/segmentio/kafka-go/lz4"
 	"log"
+	"strings"
 	"time"
 )
 
 const (
 	kafkaPartition         = 0
-	kafkaWorkers           = 3
-	kafkaPushChanBuffer    = 20000
 	TopicBlocks            = "blocks_stream"
 	TopicMessages          = "messages_stream"
 	TopicMessageReceipts   = "message_receipts_stream"
@@ -29,7 +29,6 @@ type KafkaDatastore struct {
 	config       *config.Config
 	kafkaWriters map[string]*kafka.Writer
 	// ack   chan kafka.Event
-	pushChan chan kafkaMessage
 }
 
 type kafkaMessage struct {
@@ -37,53 +36,50 @@ type kafkaMessage struct {
 	message map[string]interface{}
 }
 
-func Init(config *config.Config, ctx context.Context) (*KafkaDatastore, error) {
+func Init(config *config.Config) (*KafkaDatastore, error) {
 	ds := &KafkaDatastore{
 		config:       config,
 		kafkaWriters: make(map[string]*kafka.Writer),
-		pushChan:     make(chan kafkaMessage, kafkaPushChanBuffer),
 	}
 
 	for _, topic := range []string{TopicBlocks, TopicTipsetsToRevert, TopicMessages, TopicMessageReceipts, TopicTipSets,
 		TopicActorStates, TopicMinerInfos, TopicMinerSectors, TopicRewardActorStates} {
-		writer := kafka.NewWriter(kafka.WriterConfig{
-			Brokers:  []string{ds.config.KafkaHosts},
-			Topic:    topic,
-			Balancer: &kafka.LeastBytes{},
-		})
+		topicWithPrefix := strings.ToUpper(config.KafkaPrefix + "_" + topic)
+		var writer *kafka.Writer
+		if config.KafkaAsyncWrite {
+			writer = kafka.NewWriter(kafka.WriterConfig{
+				Brokers:          []string{ds.config.KafkaHosts},
+				Topic:            topicWithPrefix,
+				CompressionCodec: &lz4.CompressionCodec{},
+				Async:            true,
+				MaxAttempts:      5,
+				Balancer:         &kafka.RoundRobin{},
+				QueueCapacity:    10000,
+				BatchSize:        10000,
+				BatchTimeout:     10 * time.Second,
+				WriteTimeout:     15 * time.Second,
+				RequiredAcks:     1,
+			})
+		} else {
+			writer = kafka.NewWriter(kafka.WriterConfig{
+				Brokers:          []string{ds.config.KafkaHosts},
+				Topic:            topicWithPrefix,
+				CompressionCodec: &lz4.CompressionCodec{},
+				Async:            false,
+				MaxAttempts:      5,
+				Balancer:         &kafka.LeastBytes{},
+			})
+		}
 		if writer == nil {
 			return nil, errors.New("cannot create kafka writer")
 		}
 		ds.kafkaWriters[topic] = writer
 	}
 
-	for workers := 0; workers < kafkaWorkers; workers++ {
-		go ds.runPusher(ctx)
-	}
-
 	return ds, nil
 }
 
-func (ds *KafkaDatastore) runPusher(ctx context.Context) {
-	timer := time.Tick(1 * time.Minute)
-	for {
-		select {
-		case <-timer:
-			log.Println("[KafkaDatastore][Debug][runPusher]", "kafka pusher chan size:", len(ds.pushChan))
-
-		case <-ctx.Done():
-			for m := range ds.pushChan {
-				ds.push(m.topic, m.message)
-			}
-			return
-
-		case m := <-ds.pushChan:
-			ds.push(m.topic, m.message)
-		}
-	}
-}
-
-func (ds *KafkaDatastore) push(topic string, m map[string]interface{}) {
+func (ds *KafkaDatastore) Push(topic string, m map[string]interface{}, ctx context.Context) {
 	var kMsgs []kafka.Message
 
 	for key, value := range m {
@@ -101,24 +97,9 @@ func (ds *KafkaDatastore) push(topic string, m map[string]interface{}) {
 		return
 	}
 
-	err := ds.kafkaWriters[topic].WriteMessages(context.Background(), kMsgs...)
+	err := ds.kafkaWriters[topic].WriteMessages(ctx, kMsgs...)
 
 	if err != nil {
 		log.Println("[KafkaDatastore][Error][runPusher]", "Cannot produce data", err)
 	}
-}
-
-func (ds *KafkaDatastore) Push(topic string, m map[string]interface{}) (err error) {
-	if ds.kafkaWriters == nil {
-		log.Println("[KafkaDatastore][Error][push]", "Kafka writers not initialized")
-		return errors.New("couldn't push messages to kafka, seems like writers not initialized")
-	}
-
-	if _, ok := ds.kafkaWriters[topic]; !ok {
-		log.Println("[KafkaDatastore][Error][push]", "Kafka writer not initialized for topic", topic)
-		return errors.New("couldn't push messages to kafka, seems like there is no writer for topic " + topic)
-	}
-
-	ds.pushChan <- kafkaMessage{topic: topic, message: m}
-	return err
 }

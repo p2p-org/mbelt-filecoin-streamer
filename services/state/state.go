@@ -1,6 +1,7 @@
 package state
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
@@ -8,7 +9,7 @@ import (
 	"github.com/filecoin-project/go-state-types/abi"
 	"github.com/filecoin-project/lotus/api"
 	"github.com/filecoin-project/lotus/chain/types"
-	"github.com/filecoin-project/specs-actors/actors/builtin/miner"
+	"github.com/filecoin-project/specs-actors/v3/actors/builtin/miner"
 	"github.com/ipfs/go-cid"
 	"github.com/p2p-org/mbelt-filecoin-streamer/client"
 	"github.com/p2p-org/mbelt-filecoin-streamer/config"
@@ -127,7 +128,7 @@ func (s *StateService) AccountKey(actor address.Address, tsk *types.TipSetKey) *
 	return s.api.AccountKey(actor, tsk)
 }
 
-func (s *StateService) PushActors(actors []*ActorInfo) {
+func (s *StateService) PushActors(actors []*ActorInfo, ctx context.Context) {
 	// Empty actor produces panic
 	defer func() {
 		if r := recover(); r != nil {
@@ -149,10 +150,10 @@ func (s *StateService) PushActors(actors []*ActorInfo) {
 		m[key] = serializeActor(actor, key)
 	}
 
-	s.ds.Push(datastore.TopicActorStates, m)
+	s.ds.Push(datastore.TopicActorStates, m, ctx)
 }
 
-func (s *StateService) PushMinersInfo(minersInfo []*MinerInfo) {
+func (s *StateService) PushMinersInfo(minersInfo []*MinerInfo, ctx context.Context) {
 	// Empty miner info produces panic
 	defer func() {
 		if r := recover(); r != nil {
@@ -174,10 +175,10 @@ func (s *StateService) PushMinersInfo(minersInfo []*MinerInfo) {
 		m[key] = serializeMinerInfo(info, key)
 	}
 
-	s.ds.Push(datastore.TopicMinerInfos, m)
+	s.ds.Push(datastore.TopicMinerInfos, m, ctx)
 }
 
-func (s *StateService) PushMinersSectors(minersSectors []*MinerSector) {
+func (s *StateService) PushMinersSectors(minersSectors []*MinerSector, ctx context.Context) {
 	// Empty miner sector produces panic
 	defer func() {
 		if r := recover(); r != nil {
@@ -199,10 +200,10 @@ func (s *StateService) PushMinersSectors(minersSectors []*MinerSector) {
 		m[key] = serializeMinerSector(sector, key)
 	}
 
-	s.ds.Push(datastore.TopicMinerSectors, m)
+	s.ds.Push(datastore.TopicMinerSectors, m, ctx)
 }
 
-func (s *StateService) PushRewardActorStates(actor *RewardActor) {
+func (s *StateService) PushRewardActorStates(actor *RewardActor, ctx context.Context) {
 	// Empty reward actor produces panic
 	defer func() {
 		if r := recover(); r != nil {
@@ -216,7 +217,7 @@ func (s *StateService) PushRewardActorStates(actor *RewardActor) {
 
 	m := map[string]interface{}{actor.State.Epoch.String(): serializeRewardActor(actor)}
 
-	s.ds.Push(datastore.TopicRewardActorStates, m)
+	s.ds.Push(datastore.TopicRewardActorStates, m, ctx)
 }
 
 func serializeActor(actor *ActorInfo, key string) map[string]interface{} {
@@ -266,7 +267,6 @@ func serializeMinerInfo(info *MinerInfo, key string) map[string]interface{} {
 		"new_worker_effective_at":       newWorkerEffectiveAt,
 		"peer_id":                       base58.Encode(info.PeerId),
 		"multiaddrs":                    utils.MultiaddrsToVarcharArray(info.Multiaddrs),
-		"seal_proof_type":               info.SealProofType,
 		"sector_size":                   info.SectorSize,
 		"window_post_partition_sectors": info.WindowPoStPartitionSectors,
 		"miner_raw_byte_power":          rawPow.String(),

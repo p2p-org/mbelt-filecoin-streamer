@@ -1,16 +1,15 @@
 package services
 
 import (
-	"context"
 	"github.com/p2p-org/mbelt-filecoin-streamer/client"
 	"github.com/p2p-org/mbelt-filecoin-streamer/config"
 	"github.com/p2p-org/mbelt-filecoin-streamer/datastore"
 	"github.com/p2p-org/mbelt-filecoin-streamer/datastore/pg"
 )
 
-func InitServices(config *config.Config, kafkaCtx context.Context) error {
+func InitServices(config *config.Config) error {
 
-	kafkaDs, err := datastore.Init(config, kafkaCtx)
+	kafkaDs, err := datastore.Init(config)
 	if err != nil {
 		return err
 	}

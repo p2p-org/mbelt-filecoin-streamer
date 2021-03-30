@@ -2,12 +2,12 @@ package main
 
 import (
 	"encoding/json"
+	"github.com/filecoin-project/go-state-types/abi"
 	"log"
 	"math/rand"
 
 	"github.com/filecoin-project/go-address"
 	"github.com/filecoin-project/lotus/chain/types"
-	"github.com/filecoin-project/specs-actors/actors/abi"
 	"github.com/segmentio/kafka-go"
 	"time"
 	"context"
@@ -33,12 +33,12 @@ func genAddress() address.Address {
 
 func genMsg() *types.Message {
 	return &types.Message{
-		Version: rand.Int63(),
+		//Version: rand.Int63(),
 		To: genAddress(),
 		From: genAddress(),
 		Nonce: rand.Uint64(),
 		Value: types.NewInt(rand.Uint64()),
-		GasPrice: types.NewInt(rand.Uint64()),
+		//GasPrice: types.NewInt(rand.Uint64()),
 		GasLimit: rand.Int63(),
 		Method: abi.MethodNum(rand.Int63()),
 		Params: []byte(randStringRunes(10)),

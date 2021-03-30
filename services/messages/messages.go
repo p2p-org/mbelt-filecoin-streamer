@@ -1,6 +1,7 @@
 package messages
 
 import (
+	"context"
 	"encoding/base64"
 	"github.com/filecoin-project/go-address"
 	"github.com/filecoin-project/go-state-types/abi"
@@ -62,7 +63,7 @@ func (s *MessagesService) GetParentReceipts(blockCid cid.Cid) []*types.MessageRe
 	return s.api.GetParentReceipts(blockCid)
 }
 
-func (s *MessagesService) Push(messages []*MessageExtended) {
+func (s *MessagesService) Push(messages []*MessageExtended, ctx context.Context) {
 	// Empty messages has panic
 	defer func() {
 		if r := recover(); r != nil {
@@ -82,10 +83,10 @@ func (s *MessagesService) Push(messages []*MessageExtended) {
 		}
 	}
 
-	s.ds.Push(datastore.TopicMessages, m)
+	s.ds.Push(datastore.TopicMessages, m, ctx)
 }
 
-func (s *MessagesService) PushReceipts(receipts []*MessageReceiptWithCid) {
+func (s *MessagesService) PushReceipts(receipts []*MessageReceiptWithCid, ctx context.Context) {
 	// Empty messages has panic
 	defer func() {
 		if r := recover(); r != nil {
@@ -105,7 +106,7 @@ func (s *MessagesService) PushReceipts(receipts []*MessageReceiptWithCid) {
 		}
 	}
 
-	s.ds.Push(datastore.TopicMessageReceipts, m)
+	s.ds.Push(datastore.TopicMessageReceipts, m, ctx)
 }
 
 func serializeMessage(extMessage *MessageExtended) map[string]interface{} {

@@ -6,24 +6,16 @@ SELECT method,
        "from",
        "to",
        value,
-       least((gas_premium * gas_limit) + (blk.parent_base_fee * gas_used), gas_limit * gas_fee_cap) AS gas_fees,
+       least((gas_premium * gas_limit) + (base_fee * gas_used), gas_limit * gas_fee_cap) AS gas_fees,
        gas_limit,
        gas_used,
        gas_fee_cap,
        gas_premium,
-       parent_base_fee,
+       base_fee,
        block_cid,
        height AS epoch,
        msg.cid AS msg_cid
 FROM filecoin.messages AS msg
-LEFT JOIN filecoin.blocks blk ON blk.cid = block_cid
 WHERE gas_used > 0 AND method = 0 AND value > 0
-GROUP BY epoch,
-         block_cid,
-         gas_limit,
-         gas_used,
-         gas_fee_cap,
-         gas_premium,
-         parent_base_fee,
-         msg.cid
-ORDER BY epoch DESC;
+ORDER BY epoch DESC
+LIMIT 500;

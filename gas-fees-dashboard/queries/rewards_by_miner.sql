@@ -5,16 +5,11 @@
 SELECT miner,
        sum(miner_reward) * 0.000000000000000001 AS miner_rewards
 FROM (
-    SELECT least((gas_premium * gas_limit) + (parent_base_fee * gas_used), gas_limit * gas_fee_cap) - (parent_base_fee * gas_used) AS miner_reward,
-           gas_limit,
-           gas_used,
-           gas_fee_cap,
-           gas_premium,
-           parent_base_fee,
-           miner,
-           height AS epoch
+    SELECT least((gas_premium * gas_limit) + (base_fee * gas_used), gas_limit * gas_fee_cap) - (base_fee * gas_used) AS miner_reward,
+           miner
     FROM filecoin.messages AS msg
     LEFT JOIN filecoin.blocks blk ON blk.cid = block_cid
     WHERE gas_used > 0
+    GROUP BY miner, gas_premium, gas_limit, base_fee, gas_used, gas_limit, gas_fee_cap
 ) AS g
-GROUP BY miner
+GROUP BY miner;

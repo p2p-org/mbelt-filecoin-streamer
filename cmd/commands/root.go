@@ -6,6 +6,7 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 	"log"
+	"strconv"
 )
 
 var (
@@ -19,11 +20,11 @@ var (
 	conf *config.Config
 
 	rootCmd = &cobra.Command{
-		Use:   "mbelt-filecoin-streamer",
+		Use:   "[--sync | --sync-force] [--sub-head-updates] [--sync-from=<height>] [--sync-from-db-offset=<offset>]",
 		Short: "A streamer of filecoin's entities to PostgreSQL DB through Kafka",
 		Long: `This app synchronizes with current filecoin state and keeps in sync by subscribing on it's updates.
 Entities (tipsets, blocks and messages) are being pushed to Kafka. There are also sinks that get
-those entities from Kafka streams and push them in PostgreSQL DB.'`,
+those entities from Kafka streams and push them in PostgreSQL DB.`,
 		Run: func(cmd *cobra.Command, args []string) {
 			worker.Start(conf, sync, syncForce, updHead, syncFrom, syncFromDbOffset)
 		},
@@ -54,6 +55,7 @@ func init() {
 	viper.SetDefault("sub_head_updates", true)
 	viper.SetDefault("sync_from", -1)
 	viper.SetDefault("sync_from_db_offset", 100)
+	rootCmd.AddCommand(watchdogCmd)
 }
 
 func initConfig() {
@@ -61,17 +63,21 @@ func initConfig() {
 	viper.AutomaticEnv()
 
 	conf = &config.Config{
-		APIUrl:     viper.GetString("API_URL"),
-		APIWsUrl:   viper.GetString("API_WS_URL"),
-		APIToken:   viper.GetString("API_TOKEN"),
-		KafkaHosts: viper.GetString("KAFKA"), // "localhost:9092",
-		PgUrl:      viper.GetString("PG_URL"),
+		APIUrl:          viper.GetString("API_URL"),
+		APIWsUrl:        viper.GetString("API_WS_URL"),
+		APIToken:        viper.GetString("API_TOKEN"),
+		KafkaPrefix:     viper.GetString("KAFKA_PREFIX"),
+		KafkaHosts:      viper.GetString("KAFKA"), // "localhost:9092",
+		KafkaAsyncWrite: viper.GetBool("KAFKA_ASYNC_WRITE"),
+		PgUrl:           viper.GetString("PG_URL"),
 	}
 
 	banner := "\nMBELT_FILECOIN_STREAMER_API_URL = " + conf.APIUrl + "\n" +
 		"MBELT_FILECOIN_STREAMER_API_WS_URL = " + conf.APIWsUrl + "\n" +
 		"MBELT_FILECOIN_STREAMER_API_TOKEN = " + conf.APIToken + "\n" +
 		"MBELT_FILECOIN_STREAMER_KAFKA = " + conf.KafkaHosts + "\n" +
+		"MBELT_FILECOIN_STREAMER_KAFKA_PREFIX = " + conf.KafkaPrefix + "\n" +
+		"MBELT_FILECOIN_STREAMER_KAFKA_ASYNC_WRITE = " + strconv.FormatBool(conf.KafkaAsyncWrite) + "\n" +
 		"MBELT_FILECOIN_STREAMER_PG_URL = " + conf.PgUrl + "\n"
 
 	log.Println(banner)

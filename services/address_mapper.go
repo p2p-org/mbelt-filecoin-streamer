@@ -1,17 +1,18 @@
-package worker
+package services
 
 import (
 	"errors"
+	"fmt"
 	"github.com/filecoin-project/go-address"
 	"github.com/filecoin-project/go-state-types/abi"
 	"github.com/filecoin-project/lotus/chain/types"
-	"github.com/filecoin-project/specs-actors/actors/builtin"
-	"github.com/p2p-org/mbelt-filecoin-streamer/services"
+	"github.com/ipfs/go-cid"
+	mh "github.com/multiformats/go-multihash"
 	"sync"
 )
 
 const (
-	actorNameMiner = "fil/1/storageminer"
+	actorNameMiner = "storageminer"
 
 	methodSend        = "Send"
 	methodConstructor = "Constructor"
@@ -21,20 +22,21 @@ var (
 	addressMap         sync.Map
 	idAddressMap       sync.Map
 	addressIdToTypeMap sync.Map
+    builtinActors map[cid.Cid]string
 )
 
 var addrTypeToHumanMap = map[string]string{
-	"fil/1/system":           "system",
-	"fil/1/init":             "init",
-	"fil/1/cron":             "cron",
-	"fil/1/storagepower":     "storage power",
-	"fil/1/storageminer":     "miner",
-	"fil/1/storagemarket":    "storage market",
-	"fil/1/paymentchannel":   "payment channel",
-	"fil/1/reward":           "reward",
-	"fil/1/verifiedregistry": "verified registry",
-	"fil/1/account":          "account",
-	"fil/1/multisig":         "multisig",
+	"system":           "system",
+	"init":             "init",
+	"cron":             "cron",
+	"storagepower":     "storage power",
+	"storageminer":     "miner",
+	"storagemarket":    "storage market",
+	"paymentchannel":   "payment channel",
+	"reward":           "reward",
+	"verifiedregistry": "verified registry",
+	"account":          "account",
+	"multisig":         "multisig",
 }
 
 // https://github.com/filecoin-project/specs-actors/blob/v3.0.0/actors/builtin/methods.go
@@ -122,19 +124,60 @@ var verifiedRegistryMethods = map[abi.MethodNum]string{
 }
 
 var addrTypeToMethods = map[string]map[abi.MethodNum]string{
-	"fil/1/init":             initMethods,
-	"fil/1/cron":             cronMethods,
-	"fil/1/storagepower":     powerMethods,
-	"fil/1/storageminer":     minerMethods,
-	"fil/1/storagemarket":    marketMethods,
-	"fil/1/paymentchannel":   paychMethods,
-	"fil/1/reward":           rewardMethods,
-	"fil/1/verifiedregistry": verifiedRegistryMethods,
-	"fil/1/account":          accountMethods,
-	"fil/1/multisig":         multisigMethods,
+	"init":             initMethods,
+	"cron":             cronMethods,
+	"storagepower":     powerMethods,
+	"storageminer":     minerMethods,
+	"storagemarket":    marketMethods,
+	"paymentchannel":   paychMethods,
+	"reward":           rewardMethods,
+	"verifiedregistry": verifiedRegistryMethods,
+	"account":          accountMethods,
+	"multisig":         multisigMethods,
+}
+
+func init() {
+	builder := cid.V1Builder{Codec: cid.Raw, MhType: mh.IDENTITY}
+	builtinActors = make(map[cid.Cid]string)
+
+	for i := 1; i < 10; i++ {
+		for _, name := range []string{"system", "init", "cron", "storagepower", "storageminer", "storagemarket",
+			"paymentchannel", "reward", "verifiedregistry", "account", "multisig",
+		} {
+			c, err := builder.Sum([]byte(fmt.Sprintf("fil/%d/%s", i, name)))
+			if err != nil {
+				panic(err)
+			}
+			builtinActors[c] = name
+		}
+	}
+}
+
+// IsBuiltinActor returns true if the code belongs to an actor defined in this repo.
+func IsBuiltinActor(code cid.Cid) bool {
+	_, isBuiltin := builtinActors[code]
+	return isBuiltin
+}
+
+// ActorNameByCode returns the (string) name of the actor given a cid code.
+func ActorNameByCode(code cid.Cid) string {
+	if !code.Defined() {
+		return "<undefined>"
+	}
+
+	name, ok := builtinActors[code]
+	if !ok {
+		return "<unknown>"
+	}
+	return name
 }
 
 func getMethodName(addrType string, methodNum abi.MethodNum) string {
+	if methodNum == 0 {
+		return methodConstructor
+	} else if methodNum == 1 {
+		return methodSend
+	}
 	return addrTypeToMethods[addrType][methodNum]
 }
 
@@ -157,11 +200,11 @@ func getAddressType(addr address.Address, tsk *types.TipSetKey) (string, error) 
 		}
 	}
 
-	act := services.App().StateService().GetActor(addr, tsk)
+	act := App().StateService().GetActor(addr, tsk)
 	if act == nil {
 		return "", errors.New("Couldn't get actor " + addr.String())
 	}
-	actorName := builtin.ActorNameByCode(act.Code)
+	actorName := ActorNameByCode(act.Code)
 	addressIdToTypeMap.Store(addr.String(), actorName)
 
 	return actorName, nil
@@ -187,7 +230,7 @@ func lookupIdAddress(addr address.Address, tsk *types.TipSetKey) *address.Addres
 		}
 	}
 
-	id := services.App().StateService().LookupID(addr, tsk)
+	id := App().StateService().LookupID(addr, tsk)
 	if id != nil {
 		addressMap.Store(addr.String(), id)
 		idAddressMap.Store(id.String(), &addr)
@@ -208,7 +251,7 @@ func lookupAccountKeyByAddress(id address.Address, tsk *types.TipSetKey) *addres
 		}
 	}
 
-	addr := services.App().StateService().AccountKey(id, tsk)
+	addr := App().StateService().AccountKey(id, tsk)
 	if addr != nil {
 		idAddressMap.Store(id.String(), addr)
 		addressMap.Store(addr.String(), &id)
