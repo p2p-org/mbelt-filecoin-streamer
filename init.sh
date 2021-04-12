@@ -169,7 +169,7 @@ for kafka_topic in $(jq -r '.topics[].name' <<<"$KSQL_CONFIG"); do
     else
       KAFKA_REST_RESP_MESSAGE=$(curl -sX POST "$KAFKA_REST_PROXY_URL/v3/clusters/$KAFKA_CLUSTER_ID/topics" \
         -H "Content-Type: application/json" \
-        --data "{\"topic_name\": \"$kafka_topic\", \"partitions_count\": 1, \"replication_factor\": 1, \"configs\": [{\"name\": \"cleanup.policy\",\"value\": \"compact\"}, {\"name\": \"retention.ms\",\"value\": \"172800000\"}]}" | \
+        --data "{\"topic_name\": \"$kafka_topic\", \"partitions_count\": 1, \"replication_factor\": 1, \"configs\": [{\"name\": \"cleanup.policy\",\"value\": \"delete\"}, {\"name\": \"retention.ms\",\"value\": \"432000000\"}]}" | \
         jq '.message')
 
         if [[ "$KAFKA_REST_RESP_MESSAGE" != null ]]; then
