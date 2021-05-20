@@ -12,7 +12,7 @@ load_dotenv()
 
 redashUrl = os.getenv('REDASH_URL', 'http://localhost:5000')
 setupPayload = {
-    'name': os.getenv('USER_NAME', 'admin'), 'email': os.getenv('USE_EMAIL', 'admin@p2p.org'),
+    'name': os.getenv('USER_NAME', 'admin'), 'email': os.getenv('USER_EMAIL', 'admin@p2p.org'),
     'password': os.getenv('USER_PASS', 'supersecret123'), 'security_notifications': 'y',
     'org_name': os.getenv('ORG_NAME', 'p2p')
 }
