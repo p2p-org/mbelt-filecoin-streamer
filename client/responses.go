@@ -7,6 +7,7 @@ import (
 	"github.com/filecoin-project/lotus/chain/types"
 	"github.com/filecoin-project/specs-actors/v3/actors/builtin/miner"
 	"github.com/ipfs/go-cid"
+	"github.com/libp2p/go-libp2p-core/peer"
 )
 
 const (
@@ -31,6 +32,10 @@ const (
 	StateMinerSectors      = "Filecoin.StateMinerSectors"
 	StateLookupID          = "Filecoin.StateLookupID"
 	StateAccountKey        = "Filecoin.StateAccountKey"
+	StateNetworkName       = "Filecoin.StateNetworkName"
+	StateNetworkVersion    = "Filecoin.StateNetworkVersion"
+
+	NetPeers = "Filecoin.NetPeers"
 )
 
 type TipSet struct {
@@ -111,6 +116,21 @@ type MinerPowerResponse struct {
 type MinerSectorsResponse struct {
 	APIResponse
 	Result []*miner.SectorOnChainInfo `json:"result"` // payload
+}
+
+type StringResponse struct {
+	APIResponse
+	Result string `json:"result"` // payload
+}
+
+type IntResponse struct {
+	APIResponse
+	Result int `json:"result"` // payload
+}
+
+type PeersResponse struct {
+	APIResponse
+	Result []*peer.AddrInfo `json:"result"` // payload
 }
 
 type ActorState struct {

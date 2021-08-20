@@ -22,10 +22,24 @@ var (
 	addressMap         sync.Map
 	idAddressMap       sync.Map
 	addressIdToTypeMap sync.Map
-    builtinActors map[cid.Cid]string
+    builtinActors      map[cid.Cid]string
 )
 
 var addrTypeToHumanMap = map[string]string{
+	"system":           "system",
+	"init":             "init",
+	"cron":             "cron",
+	"storagepower":     "storage power",
+	"storageminer":     "miner",
+	"storagemarket":    "storage market",
+	"paymentchannel":   "payment channel",
+	"reward":           "reward",
+	"verifiedregistry": "verified registry",
+	"account":          "account",
+	"multisig":         "multisig",
+}
+
+var humanToAddrTypeMap = map[string]string{
 	"system":           "system",
 	"init":             "init",
 	"cron":             "cron",
@@ -185,6 +199,10 @@ func addrTypeToHuman(tp string) string {
 	return addrTypeToHumanMap[tp]
 }
 
+func humanToAddrType(tp string) string {
+	return humanToAddrTypeMap[tp]
+}
+
 func getAddressType(addr address.Address, tsk *types.TipSetKey) (string, error) {
 	if addr.Protocol() != address.ID {
 		return "", errors.New("address should be of id protocol")
@@ -258,4 +276,36 @@ func lookupAccountKeyByAddress(id address.Address, tsk *types.TipSetKey) *addres
 	}
 
 	return addr
+}
+
+func MethodsList() []string {
+	methods := []string{methodConstructor, methodSend}
+	for _, v := range accountMethods {
+		methods = append(methods, v)
+	}
+	for _, v := range initMethods {
+		methods = append(methods, v)
+	}
+	for _, v := range cronMethods {
+		methods = append(methods, v)
+	}
+	for _, v := range rewardMethods {
+		methods = append(methods, v)
+	}
+	for _, v := range multisigMethods {
+		methods = append(methods, v)
+	}
+	for _, v := range marketMethods {
+		methods = append(methods, v)
+	}
+	for _, v := range powerMethods {
+		methods = append(methods, v)
+	}
+	for _, v := range minerMethods {
+		methods = append(methods, v)
+	}
+	for _, v := range verifiedRegistryMethods {
+		methods = append(methods, v)
+	}
+	return methods
 }

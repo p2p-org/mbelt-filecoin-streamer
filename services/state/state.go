@@ -11,6 +11,7 @@ import (
 	"github.com/filecoin-project/lotus/chain/types"
 	"github.com/filecoin-project/specs-actors/v3/actors/builtin/miner"
 	"github.com/ipfs/go-cid"
+	"github.com/libp2p/go-libp2p-core/peer"
 	"github.com/p2p-org/mbelt-filecoin-streamer/client"
 	"github.com/p2p-org/mbelt-filecoin-streamer/config"
 	"github.com/p2p-org/mbelt-filecoin-streamer/datastore"
@@ -80,6 +81,16 @@ type RewardActorState struct {
 	ThisEpochRewardSmoothedVelocityEstimate big.Int
 }
 
+type ActorFromDb struct {
+	ActorCode string
+	ActorHead string
+	Nonce     uint64
+	Balance   big.Int
+	Height    int64
+	TsKey     string
+	Addr      string
+}
+
 func Init(config *config.Config, kafkaDs *datastore.KafkaDatastore, apiClient *client.APIClient) (*StateService, error) {
 	return &StateService{
 		config: config,
@@ -126,6 +137,18 @@ func (s *StateService) LookupID(actor address.Address, tsk *types.TipSetKey) *ad
 
 func (s *StateService) AccountKey(actor address.Address, tsk *types.TipSetKey) *address.Address {
 	return s.api.AccountKey(actor, tsk)
+}
+
+func (s *StateService) NetworkName() string {
+	return s.api.NetworkNameHttp()
+}
+
+func (s *StateService) NetworkVersion(tsk *types.TipSetKey) int {
+	return s.api.NetworkVersionHttp(tsk)
+}
+
+func (s *StateService) NetPeers() []*peer.AddrInfo {
+	return s.api.NetPeersHttp()
 }
 
 func (s *StateService) PushActors(actors []*ActorInfo, ctx context.Context) {

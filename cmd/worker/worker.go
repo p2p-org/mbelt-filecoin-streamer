@@ -10,7 +10,7 @@ import (
 	"syscall"
 )
 
-func Start(conf *config.Config, sync bool, syncForce bool, updHead bool, syncFrom int, syncFromDbOffset int) {
+func Start(conf *config.Config, sync bool, syncForce bool, follow bool, updHead bool, syncFrom int, syncFromDbOffset int) {
 	exitCode := 0
 	defer os.Exit(exitCode)
 
@@ -34,7 +34,7 @@ func Start(conf *config.Config, sync bool, syncForce bool, updHead bool, syncFro
 		if syncFrom >= 0 {
 			services.App().SyncService().SyncToHead(syncFrom, syncCtx)
 		} else {
-			heightFromDb, err := services.App().BlocksService().GetMaxHeightFromDB()
+			heightFromDb, err := services.App().PgDatastore().GetMaxHeight()
 			if err != nil {
 				log.Println("Can't get max height from postgres DB, stopping...")
 				log.Println(err)
@@ -50,7 +50,9 @@ func Start(conf *config.Config, sync bool, syncForce bool, updHead bool, syncFro
 		}
 	}
 
-	if updHead {
+	if follow {
+		services.App().SyncService().SyncFollow(updCtx)
+	} else if updHead {
 		services.App().SyncService().UpdateHeads(updCtx)
 	}
 

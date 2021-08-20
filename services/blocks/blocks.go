@@ -7,32 +7,47 @@ import (
 	"github.com/p2p-org/mbelt-filecoin-streamer/client"
 	"github.com/p2p-org/mbelt-filecoin-streamer/config"
 	"github.com/p2p-org/mbelt-filecoin-streamer/datastore"
-	"github.com/p2p-org/mbelt-filecoin-streamer/datastore/pg"
 	"log"
+	"math/big"
 )
 
 type BlocksService struct {
 	config  *config.Config
 	kafkaDs *datastore.KafkaDatastore
-	pgDs    *pg.PgDatastore
 	api     *client.APIClient
 }
 
-func Init(config *config.Config, kafkaDs *datastore.KafkaDatastore, pgDs *pg.PgDatastore, apiClient *client.APIClient) (*BlocksService, error) {
+type BlockFromDb struct {
+	Cid           string
+	Height        int64
+	WinCount      int64
+	Miner         string
+	Validated     bool
+	ParentBaseFee big.Int
+	BlockTime     int64
+}
+
+type BlockFromDbWithMessagesCids struct {
+	Cid           string
+	Height        int64
+	WinCount      int64
+	Miner         string
+	Validated     bool
+	ParentBaseFee big.Int
+	BlockTime     int64
+	MessagesCids  []string
+}
+
+func Init(config *config.Config, kafkaDs *datastore.KafkaDatastore, apiClient *client.APIClient) (*BlocksService, error) {
 	return &BlocksService{
 		config:  config,
 		kafkaDs: kafkaDs,
-		pgDs:    pgDs,
 		api:     apiClient,
 	}, nil
 }
 
 func (s *BlocksService) GetHeadUpdates(ctx context.Context, resChan *chan []*api.HeadChange) {
 	go s.api.GetHeadUpdates(ctx, resChan)
-}
-
-func (s *BlocksService) GetMaxHeightFromDB() (int, error) {
-	return s.pgDs.GetMaxHeight()
 }
 
 func (s *BlocksService) Push(blocks []*types.BlockHeader, ctx context.Context) {

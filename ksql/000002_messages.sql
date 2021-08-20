@@ -1,7 +1,7 @@
 CREATE STREAM {APP_PREFIX}_MESSAGES_STREAM (
   "cid" VARCHAR,
   "height" STRING,
-  "block_cid" VARCHAR,
+  "block_cids" STRING,
   "method" INTEGER,
   "method_name" VARCHAR,
   "from" VARCHAR,

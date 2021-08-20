@@ -29,7 +29,7 @@ type ServiceProvider struct {
 func (p *ServiceProvider) Init(config *config.Config, kafkaDs *datastore.KafkaDatastore, pgDs *pg.PgDatastore, apiClient *client.APIClient) error {
 	var err error
 
-	p.blocksService, err = blocks.Init(config, kafkaDs, pgDs, apiClient)
+	p.blocksService, err = blocks.Init(config, kafkaDs, apiClient)
 
 	if err != nil {
 		return err

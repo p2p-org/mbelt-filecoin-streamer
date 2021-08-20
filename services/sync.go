@@ -23,8 +23,11 @@ import (
 )
 
 const (
-	defaultHeight           = 5000
-	batchCapacity uint32    = 12
+	defaultHeight                   = 5000
+	syncMaxWorkers           uint32 = 7
+	actorChangesMaxWorkers   uint32 = 10
+
+	timeBetweenNewHeadChecks = time.Second * 5
 
 	// current event is current head. We receive it once right after subscription on head updates
 	HeadEventCurrent = "current"
@@ -60,19 +63,23 @@ func (s *SyncService) UpdateHeads(ctx context.Context) {
 			log.Println("[Sync][Debug][UpdateHeads]", "unsubscribed from head updates")
 			return
 		case update := <-headUpdates:
+			if len(headUpdates) > 50 {
+				log.Println("[Sync][Debug][UpdateHeads]", "head uodates chan size", len(headUpdates))
+			}
+
 			for _, hu := range update {
-				// TODO: I don't know for sure (but I'm pretty confident) that we will not get null tipset via head updates subscription.
-				// Shall we handle it here or maybe leave it to the watchdog (if there will be some)? In theory there should not be null tip sets in high epochs of mainnet.
 				tipSet := &tipsets.TipSetWithState{
 					TipSet: hu.Val,
 					State:  tipsets.StateNormal,
 				}
 
+				log.Println("[Sync][Info]", "Got head update. Height:", tipSet.Height(), "type:", hu.Type)
+
 				switch hu.Type {
 
 				case HeadEventCurrent:
 					currentHeight := int(hu.Val.Height())
-					maxHeightInDb, err := App().BlocksService().GetMaxHeightFromDB()
+					maxHeightInDb, err := App().PgDatastore().GetMaxHeight()
 					if err != nil {
 						log.Println("[Sync][Error][UpdateHeads]", "couldn't get max height from DB. Error:", err)
 						cancelHeadUpdates()
@@ -85,7 +92,7 @@ func (s *SyncService) UpdateHeads(ctx context.Context) {
 					s.CollectAndPushOtherEntitiesByTipSet(tipSet, ctx)
 
 				case HeadEventRevert:
-					App().TipSetsService().PushTipSetsToRevert(tipSet, ctx)
+					//App().TipSetsService().PushTipSetsToRevert(tipSet, ctx)
 
 				case HeadEventApply:
 					s.CollectAndPushOtherEntitiesByTipSet(tipSet, ctx)
@@ -98,6 +105,27 @@ func (s *SyncService) UpdateHeads(ctx context.Context) {
 					}
 				}
 			}
+		}
+	}
+}
+
+func (s *SyncService) SyncFollow(ctx context.Context) {
+	lastHeight, err := App().PgDatastore().GetMaxHeight()
+	if err != nil {
+		log.Println("[Sync][Error][SyncFollow]", err)
+	}
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		default:
+			head := App().TipSetsService().GetHead()
+			if head != nil && int(head.Height()) > lastHeight {
+				s.SyncTo(lastHeight, int(head.Height()), ctx)
+				lastHeight = int(head.Height())
+			}
+			time.Sleep(timeBetweenNewHeadChecks)
 		}
 	}
 }
@@ -119,7 +147,7 @@ func (s *SyncService) SyncTo(from int, to int, ctx context.Context) {
 		syncHeight = defaultHeight
 	}
 
-	defer log.Println("[Sync][Debug][Sync]", "finished sync")
+	defer log.Println("[Sync][Info][Sync]", "finished sync")
 
 	startHeight := abi.ChainEpoch(from)
 	if startHeight <= 1 {
@@ -140,7 +168,7 @@ func (s *SyncService) SyncTo(from int, to int, ctx context.Context) {
 
 		default:
 
-			if atomic.LoadUint32(&runningWorkers) < batchCapacity {
+			if atomic.LoadUint32(&runningWorkers) < syncMaxWorkers {
 
 				atomic.AddUint32(&runningWorkers, 1)
 				wg.Add(1)
@@ -172,9 +200,13 @@ func (s *SyncService) SyncTo(from int, to int, ctx context.Context) {
 }
 
 func (s *SyncService) SyncTipSetForHeight(height abi.ChainEpoch) (*tipsets.TipSetWithState, bool) {
-	log.Println("[Sync][Debug]", "Load height:", height)
+	log.Println("[Sync][Info]", "Load height:", height)
 
-	tipSet, isHeightNotReached := App().TipSetsService().GetByHeight(height)
+	tipSet, heightReached := App().TipSetsService().GetByHeight(height)
+	if heightReached {
+		log.Println("[Sync][Debug]", "Height reached")
+		return nil, false
+	}
 
 	tipSetWithState := &tipsets.TipSetWithState{
 		TipSet: tipSet,
@@ -194,11 +226,6 @@ func (s *SyncService) SyncTipSetForHeight(height abi.ChainEpoch) (*tipsets.TipSe
 		return tipSetWithState, true
 	}
 
-	if !isHeightNotReached {
-		log.Println("[Sync][Debug]", "Height reached")
-		return nil, false
-	}
-
 	return tipSetWithState, false
 }
 
@@ -208,6 +235,7 @@ func (s *SyncService) GetMessagesAndReceipts(tipSet *types.TipSet) (msgs []*mess
 		firstBlockCid := tipSet.Blocks()[0].Cid()
 		tipSetMsgs := App().MessagesService().GetParentMessages(firstBlockCid)
 		receipts := App().MessagesService().GetParentReceipts(firstBlockCid)
+		rcpts = make([]*messages.MessageReceiptWithCid, 0, len(tipSetMsgs))
 		for i, msg := range tipSetMsgs {
 			rcpts = append(rcpts, &messages.MessageReceiptWithCid{
 				Cid:       msg.Cid,
@@ -216,7 +244,7 @@ func (s *SyncService) GetMessagesAndReceipts(tipSet *types.TipSet) (msgs []*mess
 		}
 	}
 
-	//tsk := types.NewTipSetKey(tipSet.Cids()...)
+	msgsMap := make(map[cid.Cid]*messages.MessageExtended, 100)
 
 	for _, block := range tipSet.Blocks() {
 		blockCid := block.Cid()
@@ -229,6 +257,7 @@ func (s *SyncService) GetMessagesAndReceipts(tipSet *types.TipSet) (msgs []*mess
 		for _, msg := range blockMessages.BlsMessages {
 			fromId := lookupIdAddress(msg.From, nil)
 			toId   := lookupIdAddress(msg.To, nil)
+			msgCid := msg.Cid()
 
 			var fromType, toType string
 			if fromId != nil {
@@ -239,24 +268,32 @@ func (s *SyncService) GetMessagesAndReceipts(tipSet *types.TipSet) (msgs []*mess
 			}
 
 			methodName := getMethodName(toType, msg.Method)
-			msgs = append(msgs, &messages.MessageExtended{
-				Cid:           msg.Cid(),
-				Height:        block.Height,
-				BlockCid:      blockCid,
-				Message:       msg,
-				FromId:        fromId,
-				ToId:          toId,
-				FromType:      addrTypeToHuman(fromType),
-				ToType:        addrTypeToHuman(toType),
-				MethodName:    methodName,
-				ParentBaseFee: block.ParentBaseFee,
-				Timestamp:     block.Timestamp,
-			})
+			if msgInMap, ok := msgsMap[msgCid]; ok {
+				msgInMap.BlockCids[blockCid] = struct{}{}
+				msgsMap[msgCid] = msgInMap
+			} else {
+				blockCids := make(map[cid.Cid]struct{}, 5)
+				blockCids[blockCid] = struct{}{}
+				msgsMap[msgCid] = &messages.MessageExtended{
+					Cid:           msgCid,
+					Height:        block.Height,
+					BlockCids:     blockCids,
+					Message:       msg,
+					FromId:        fromId,
+					ToId:          toId,
+					FromType:      addrTypeToHuman(fromType),
+					ToType:        addrTypeToHuman(toType),
+					MethodName:    methodName,
+					ParentBaseFee: block.ParentBaseFee,
+					Timestamp:     block.Timestamp,
+				}
+			}
 		}
 
 		for _, msg := range blockMessages.SecpkMessages {
 			fromId := lookupIdAddress(msg.Message.From, nil)
 			toId   := lookupIdAddress(msg.Message.To, nil)
+			msgCid := msg.Cid()
 
 			var fromType, toType string
 			if fromId != nil {
@@ -267,19 +304,31 @@ func (s *SyncService) GetMessagesAndReceipts(tipSet *types.TipSet) (msgs []*mess
 			}
 
 			methodName := getMethodName(toType, msg.Message.Method)
-			msgs = append(msgs, &messages.MessageExtended{
-				Cid:           msg.Cid(),
-				Height:        block.Height,
-				BlockCid:      blockCid,
-				Message:       &msg.Message,
-				FromId:        fromId,
-				ToId:          toId,
-				FromType:      addrTypeToHuman(fromType),
-				ToType:        addrTypeToHuman(toType),
-				MethodName:    methodName,
-				ParentBaseFee: block.ParentBaseFee,
-				Timestamp:     block.Timestamp,
-			})
+			if msgInMap, ok := msgsMap[msgCid]; ok {
+				msgInMap.BlockCids[blockCid] = struct{}{}
+				msgsMap[msgCid] = msgInMap
+			} else {
+				blockCids := make(map[cid.Cid]struct{}, 5)
+				blockCids[blockCid] = struct{}{}
+				msgsMap[msgCid] = &messages.MessageExtended{
+					Cid:           msgCid,
+					Height:        block.Height,
+					BlockCids:     blockCids,
+					Message:       &msg.Message,
+					FromId:        fromId,
+					ToId:          toId,
+					FromType:      addrTypeToHuman(fromType),
+					ToType:        addrTypeToHuman(toType),
+					MethodName:    methodName,
+					ParentBaseFee: block.ParentBaseFee,
+					Timestamp:     block.Timestamp,
+				}
+			}
+		}
+
+		msgs = make([]*messages.MessageExtended, 0, len(msgsMap))
+		for _, msg := range msgsMap {
+			msgs = append(msgs, msg)
 		}
 
 	}
@@ -290,15 +339,17 @@ func (s *SyncService) GetMessagesAndReceipts(tipSet *types.TipSet) (msgs []*mess
 func (s *SyncService) CollectActorChanges(tipset *types.TipSet) (out []*state.ActorInfo, nullRounds []types.TipSetKey,
 	minerInfo []*state.MinerInfo, minerSectors []*state.MinerSector, reward *state.RewardActor) {
 
+	tsk, parents, height, parentState := tipset.Key(), tipset.Parents(), tipset.Height(), tipset.ParentState()
+
 	start := time.Now()
 	defer func() {
-		log.Println("Collected Actor Changes", "duration:", time.Since(start).String(), "actors count:", len(out),
+		log.Println("Collected Actor Changes", "height:", height, "duration:", time.Since(start).String(), "actors count:", len(out),
 			"miner info count:", len(minerInfo), "miner sectors count:", len(minerSectors), "reward actor:", reward != nil)
 	}()
 
-	parentTipSet := App().TipSetsService().GetByKey(tipset.Parents())
+	parentTipSet := App().TipSetsService().GetByKey(parents)
 	if parentTipSet == nil {
-		log.Println("[Sync][Debug][CollectActorChanges] parent is nil. height: ", tipset.Height())
+		log.Println("[Sync][Debug][CollectActorChanges] parent is nil. height: ", height)
 		return nil, nil, nil, nil, nil
 	}
 	if parentTipSet.ParentState().Equals(tipset.ParentState()) {
@@ -310,98 +361,128 @@ func (s *SyncService) CollectActorChanges(tipset *types.TipSet) (out []*state.Ac
 	// TODO: changes will contain deleted actors, this causes needless processing further down the pipeline, consider
 	// a separate strategy for deleted actors
 	// (these comments as well as basic logic were copied from lotus/cmd/lotus-chainwatch/processor/processor.go)
-	changes := App().StateService().GetChangedActors(parentTipSet.ParentState(), tipset.ParentState())
+	changes := App().StateService().GetChangedActors(parentTipSet.ParentState(), parentState)
 
 	out = make([]*state.ActorInfo, 0, len(changes))
-	actorsSeen := map[cid.Cid]struct{}{}
+	var runningWorkers uint32
+	wg, mut := &sync.WaitGroup{}, &sync.Mutex{}
 
+	actorsSeen := make(map[cid.Cid]struct{}, 200000)
 	// record the state of all actors that have changed
 	for a, act := range changes {
-		var deleted bool
-		has, err := App().StateService().ChainHasObj(act.Head)
-		if err != nil {
-			log.Println("[Sync][Error][CollectActorChanges]", err)
-		}
-		if !has {
-			deleted = true
-		}
-
-		addr, err := address.NewFromString(a)
-		if err != nil {
-			log.Println("[Sync][Error][CollectActorChanges]", err)
+		if _, ok := actorsSeen[act.Head]; ok {
 			continue
 		}
 
-		actorName, err := getAddressType(addr, nil)
-		if err != nil {
-			log.Println("[Sync][Error][CollectActorChanges]", err)
-		}
+		for {
+			if atomic.LoadUint32(&runningWorkers) < actorChangesMaxWorkers {
 
-		// miner info collection
-		if actorName == actorNameMiner {
-			info := App().StateService().GetMinerInfo(addr, tipset.Key())
-			power := App().StateService().GetMinerPower(addr, tipset.Key())
-			// removed miners sectors collection because it takes too much resources to collect it like it's implemented here
-			//sectors := services.App().StateService().GetMinerSectors(addr, tipset.Key())
-			minerInfo = append(minerInfo, &state.MinerInfo{
-				MinerInfo:  info,
-				MinerPower: power,
-				Miner:      addr,
-				Height:     tipset.Height(),
-			})
-			//for _, sector := range sectors {
-			//	minerSectors = append(minerSectors, &state.MinerSector{
-			//		SectorOnChainInfo: sector,
-			//		Miner:             addr,
-			//		Height:            tipset.Height(),
-			//	})
-			//}
-			// We can skip the rest of loop if we don't want miner's account states to be collected.
-			//continue
-		}
+				atomic.AddUint32(&runningWorkers, 1)
+				actorsSeen[act.Head] = struct{}{}
+				wg.Add(1)
 
-		ast := App().StateService().ReadState(addr, tipset.Key())
+				go collectChangesForActor(tsk, parents, height, parentState, a, act, wg, mut, &runningWorkers, out,
+					minerInfo, minerSectors, reward)
 
-		if ast == nil {
-			log.Println("[Sync][Error][CollectActorChanges]", "empty state!", "address:", addr.String())
-			continue
-		}
-
-		actorState, err := json.Marshal(ast.State)
-		if err != nil {
-			log.Println("[Sync][Error][CollectActorChanges]", err)
-			continue
-		}
-
-		// parse reward
-		if addr == builtin.RewardActorAddr {
-			rewardState := parseRewardActorState(ast.State.(map[string]interface{}))
-			reward = &state.RewardActor{
-				Act:         act,
-				StateRoot:   tipset.ParentState(),
-				TsKey:       tipset.Key(),
-				ParentTsKey: tipset.Parents(),
-				Addr:        addr,
-				State:       rewardState,
+				break
 			}
 		}
-
-		if _, ok := actorsSeen[act.Head]; !ok {
-			out = append(out, &state.ActorInfo{
-				Act:         act,
-				StateRoot:   tipset.ParentState(),
-				Height:      tipset.Height(),
-				TsKey:       tipset.Key(),
-				ParentTsKey: tipset.Parents(),
-				Addr:        addr,
-				State:       string(actorState),
-				Deleted:     deleted,
-			})
-		}
-		actorsSeen[act.Head] = struct{}{}
 	}
 
+	wg.Wait()
+
 	return
+}
+
+func collectChangesForActor(tsk types.TipSetKey, parents types.TipSetKey, height abi.ChainEpoch, parentState cid.Cid,
+	a string, act types.Actor, wg *sync.WaitGroup, mut *sync.Mutex, runningWorkers *uint32, out []*state.ActorInfo,
+	minerInfo []*state.MinerInfo, minerSectors []*state.MinerSector, reward *state.RewardActor) {
+
+	defer func() {
+		atomic.AddUint32(runningWorkers, ^uint32(0))
+		wg.Done()
+	}()
+
+	has, err := App().StateService().ChainHasObj(act.Head)
+	if err != nil {
+		log.Println("[Sync][Error][CollectActorChanges]", err)
+	}
+
+	addr, err := address.NewFromString(a)
+	if err != nil {
+		log.Println("[Sync][Error][CollectActorChanges]", err)
+		return
+	}
+
+	actorName, err := getAddressType(addr, nil)
+	if err != nil {
+		log.Println("[Sync][Error][CollectActorChanges]", err)
+	}
+
+	// miner info collection
+	if actorName == actorNameMiner {
+		info := App().StateService().GetMinerInfo(addr, tsk)
+		power := App().StateService().GetMinerPower(addr, tsk)
+		// removed miners sectors collection because it takes too much resources to collect it like it's implemented here
+		//sectors := services.App().StateService().GetMinerSectors(addr, tsk)
+		mut.Lock()
+		minerInfo = append(minerInfo, &state.MinerInfo{
+			MinerInfo:  info,
+			MinerPower: power,
+			Miner:      addr,
+			Height:     height,
+		})
+		mut.Unlock()
+		//for _, sector := range sectors {
+		//	minerSectors = append(minerSectors, &state.MinerSector{
+		//		SectorOnChainInfo: sector,
+		//		Miner:             addr,
+		//		Height:            height,
+		//	})
+		//}
+		// We can skip the rest of loop if we don't want miner's account states to be collected.
+		//continue
+	}
+
+	ast := App().StateService().ReadState(addr, tsk)
+	if ast == nil {
+		log.Println("[Sync][Error][CollectActorChanges]", "empty state!", "address:", addr.String())
+		return
+	}
+
+	actorState, err := json.Marshal(ast.State)
+	if err != nil {
+		log.Println("[Sync][Error][CollectActorChanges]", err)
+		return
+	}
+
+	// parse reward
+	if addr == builtin.RewardActorAddr {
+		rewardState := parseRewardActorState(ast.State.(map[string]interface{}))
+		mut.Lock()
+		reward = &state.RewardActor{
+			Act:         act,
+			StateRoot:   parentState,
+			TsKey:       tsk,
+			ParentTsKey: parents,
+			Addr:        addr,
+			State:       rewardState,
+		}
+		mut.Unlock()
+	}
+
+	mut.Lock()
+	out = append(out, &state.ActorInfo{
+		Act:         act,
+		StateRoot:   parentState,
+		Height:      height,
+		TsKey:       tsk,
+		ParentTsKey: parents,
+		Addr:        addr,
+		State:       string(actorState),
+		Deleted:     !has,
+	})
+	mut.Unlock()
 }
 
 func parseRewardActorState(stateMap map[string]interface{}) *state.RewardActorState {
@@ -489,17 +570,29 @@ func parseRewardActorState(stateMap map[string]interface{}) *state.RewardActorSt
 }
 
 func (s *SyncService) CollectAndPushOtherEntitiesByTipSet(tipset *tipsets.TipSetWithState, ctx context.Context) {
+	wg := sync.WaitGroup{}
+
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		// ignoring null rounds and sectors
+		changes, _, minersInfo, _, rewardStates := s.CollectActorChanges(tipset.TipSet)
+		App().StateService().PushActors(changes, ctx)
+		App().StateService().PushMinersInfo(minersInfo, ctx)
+		//services.App().StateService().PushMinersSectors(minersSectors)
+		App().StateService().PushRewardActorStates(rewardStates, ctx)
+	}()
+
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		msgs, receipts := s.GetMessagesAndReceipts(tipset.TipSet)
+		App().MessagesService().Push(msgs, ctx)
+		App().MessagesService().PushReceipts(receipts, ctx)
+	}()
+
 	App().TipSetsService().Push(tipset, ctx)
 	App().BlocksService().Push(tipset.Blocks(), ctx)
 
-	// ignoring null rounds and sectors
-	changes, _, minersInfo, _, rewardStates := s.CollectActorChanges(tipset.TipSet)
-	App().StateService().PushActors(changes, ctx)
-	App().StateService().PushMinersInfo(minersInfo, ctx)
-	//services.App().StateService().PushMinersSectors(minersSectors)
-	App().StateService().PushRewardActorStates(rewardStates, ctx)
-
-	msgs, receipts := s.GetMessagesAndReceipts(tipset.TipSet)
-	App().MessagesService().Push(msgs, ctx)
-	App().MessagesService().PushReceipts(receipts, ctx)
+	wg.Wait()
 }

@@ -16,12 +16,11 @@ CREATE TABLE IF NOT EXISTS filecoin.blocks
     "block_time"      TIMESTAMP
 );
 
-
 CREATE TABLE IF NOT EXISTS filecoin.messages
 (
     "cid"         VARCHAR(256) NOT NULL PRIMARY KEY,
     "height"      BIGINT,
-    "block_cid"   VARCHAR(256),
+    "block_cids"  VARCHAR(256)[],
     "method"      INT,
     "method_name" VARCHAR(128),
     "from"        VARCHAR(256),
@@ -131,6 +130,13 @@ CREATE TABLE IF NOT EXISTS filecoin.reward_actor_states (
   "this_epoch_reward_smoothed_velocity_estimate" DECIMAL(100, 0)
 );
 
+CREATE TABLE filecoin.reverted_tipsets (LIKE filecoin.tipsets INCLUDING ALL);
+CREATE TABLE filecoin.reverted_blocks (LIKE filecoin.blocks INCLUDING ALL);
+CREATE TABLE filecoin.reverted_messages (LIKE filecoin.messages INCLUDING ALL);
+CREATE TABLE filecoin.reverted_actor_states (LIKE filecoin.actor_states INCLUDING ALL);
+CREATE TABLE filecoin.reverted_reward_actor_states (LIKE filecoin.reward_actor_states INCLUDING ALL);
+CREATE TABLE filecoin.reverted_miner_infos (LIKE filecoin.miner_infos INCLUDING ALL);
+
 -- Fix for unquoting varchar json
 CREATE OR REPLACE FUNCTION varchar_to_jsonb(varchar) RETURNS jsonb AS
 $$
@@ -162,7 +168,7 @@ CREATE TABLE IF NOT EXISTS filecoin._messages
 (
     "cid"         VARCHAR(256) NOT NULL PRIMARY KEY,
     "height"      TEXT,
-    "block_cid"   VARCHAR(256),
+    "block_cids"  TEXT,
     "method"      INT,
     "method_name" VARCHAR(128),
     "from"        VARCHAR(256),
@@ -203,11 +209,11 @@ CREATE TABLE IF NOT EXISTS filecoin._tipsets
 CREATE TABLE IF NOT EXISTS filecoin._tipsets_to_revert
 (
     "height"        TEXT NOT NULL PRIMARY KEY,
-    "parents"       VARCHAR(256)[],
+    "parents"       TEXT,
     "parent_weight" TEXT,
     "parent_state"  VARCHAR,
-    "blocks"        VARCHAR(256)[],
-    "min_timestamp" TIMESTAMP,
+    "blocks"        TEXT,
+    "min_timestamp" BIGINT,
     "state"         SMALLINT
 );
 
@@ -358,7 +364,53 @@ CREATE OR REPLACE FUNCTION filecoin.sink_revert_tipsets()
     RETURNS trigger AS
 $$
 BEGIN
-    DELETE FROM filecoin.tipsets WHERE tipsets."height" = NEW."height";
+    WITH moved_rows AS (
+        DELETE FROM filecoin.tipsets
+            WHERE tipsets."height" = NEW."height"
+            RETURNING *
+    )
+    INSERT INTO filecoin.reverted_tipsets
+    SELECT * FROM moved_rows;
+
+    WITH moved_rows AS (
+        DELETE FROM filecoin.blocks
+            WHERE blocks."height" = NEW."height"
+            RETURNING *
+    )
+    INSERT INTO filecoin.reverted_blocks
+    SELECT * FROM moved_rows;
+
+    WITH moved_rows AS (
+        DELETE FROM filecoin.messages
+            WHERE messages."height" = NEW."height"
+            RETURNING *
+    )
+    INSERT INTO filecoin.reverted_messages
+    SELECT * FROM moved_rows;
+
+    WITH moved_rows AS (
+        DELETE FROM filecoin.actor_states
+            WHERE actor_states."height" = NEW."height"
+            RETURNING *
+    )
+    INSERT INTO filecoin.reverted_actor_states
+    SELECT * FROM moved_rows;
+
+    WITH moved_rows AS (
+        DELETE FROM filecoin.reward_actor_states
+            WHERE reward_actor_states."epoch" = NEW."height"
+            RETURNING *
+    )
+    INSERT INTO filecoin.reverted_reward_actor_states
+    SELECT * FROM moved_rows;
+
+    WITH moved_rows AS (
+        DELETE FROM filecoin.miner_infos
+            WHERE miner_infos."height" = NEW."height"
+            RETURNING *
+    )
+    INSERT INTO filecoin.reverted_miner_infos
+    SELECT * FROM moved_rows;
     RETURN NEW;
 END ;
 
@@ -396,7 +448,7 @@ $$
 BEGIN
     INSERT INTO filecoin.messages("cid",
                                   "height",
-                                  "block_cid",
+                                  "block_cids",
                                   "method",
                                   "method_name",
                                   "from",
@@ -415,7 +467,7 @@ BEGIN
                                   "block_time")
     VALUES (NEW."cid",
             NEW."height"::BIGINT,
-            NEW."block_cid",
+            NEW."block_cids"::VARCHAR(256)[],
             NEW."method",
             NEW."method_name",
             NEW."from",
@@ -849,3 +901,58 @@ CREATE INDEX filecoin_miner_sectors_miner_idx ON filecoin.miner_sectors ("miner"
 CREATE INDEX filecoin_block_cid_idx ON filecoin.blocks ("cid");
 CREATE INDEX filecoin_messages_cid_idx ON filecoin.messages ("cid");
 
+CREATE MATERIALIZED VIEW filecoin.gas_fees_components_for_messages
+AS SELECT
+           least((gas_premium * gas_limit) + (base_fee * gas_used) + (((gas_limit - gas_used) * (gas_limit - (1.1 * gas_used))) / (gas_used * base_fee)),
+                 gas_limit * gas_fee_cap) * 0.000000000000000001 AS gas_fees,
+           CASE
+               WHEN base_fee + gas_premium > gas_fee_cap
+                   THEN gas_limit * (gas_fee_cap - base_fee) * 0.000000000000000001
+               ELSE gas_limit * gas_premium * 0.000000000000000001
+               END AS premiums,
+           base_fee * gas_used * 0.000000000000000001 AS base_to_burn,
+           ((gas_limit - gas_used) * (gas_limit - (1.1 * gas_used))) / (gas_used * base_fee) * 0.000000000000000001 AS over_estimate_to_burn,
+           cid,
+           height,
+           block_cids,
+           method,
+           method_name,
+           "from",
+           from_id,
+           to_id,
+           from_type,
+           to_type,
+           value,
+           gas_limit,
+           gas_premium,
+           gas_fee_cap,
+           gas_used,
+           base_fee,
+           block_time
+   FROM filecoin.messages WHERE gas_used > 0;
+
+CREATE MATERIALIZED VIEW filecoin.gas_fees_components_aggregations_for_epoch
+AS SELECT
+       sum(gas_fees) AS sum_gas_fees,
+       sum(premiums) AS sum_premiums,
+       sum(base_to_burn) AS sum_base_to_burn,
+       sum(over_estimate_to_burn) AS sum_over_estimate_to_burn,
+       sum(value) AS sum_value,
+       sum(gas_limit) AS sum_gas_limit,
+       sum(gas_premium) AS sum_gas_premium,
+       sum(gas_fee_cap) AS sum_gas_fee_cap,
+       sum(gas_used) AS sum_gas_used,
+       sum(base_fee) AS sum_base_fee,
+       avg(gas_fees) AS avg_gas_fees,
+       avg(premiums) AS avg_premiums,
+       avg(base_to_burn) AS avg_base_to_burn,
+       avg(over_estimate_to_burn) AS avg_over_estimate_to_burn,
+       avg(value) AS avg_value,
+       avg(gas_limit) AS avg_gas_limit,
+       avg(gas_premium) AS avg_gas_premium,
+       avg(gas_fee_cap) AS avg_gas_fee_cap,
+       avg(gas_used) AS avg_gas_used,
+       avg(base_fee) AS avg_base_fee,
+       height
+   FROM filecoin.gas_fees_components_for_messages
+   GROUP BY height;

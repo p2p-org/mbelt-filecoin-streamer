@@ -9,7 +9,7 @@
 ## Before start
 1. Start mbelt-filecoin-streamer to fill database. You can find instructions [here](../README.MD). 
 2. Create `.env` file similar to `example.env`.
-3. `pip3 install python-dotenv redash-api-client`
+3. `pip3 install requests python-dotenv redash-api-client`
 
 #### Environment variables
 

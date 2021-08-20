@@ -10,6 +10,7 @@ import (
 	"github.com/p2p-org/mbelt-filecoin-streamer/datastore/utils"
 	"log"
 	"math/big"
+	"strconv"
 )
 
 const (
@@ -26,6 +27,16 @@ type TipSetsService struct {
 
 type TipSetWithState struct {
 	*types.TipSet
+	State uint8
+}
+
+type TipSetFromDb struct {
+	Height int64
+	Parents []string
+	ParentWeight int64
+	ParentState string
+	Blocks []string
+	MinTs int64
 	State uint8
 }
 
@@ -53,8 +64,8 @@ func (s *TipSetsService) GetByKey(key types.TipSetKey) *types.TipSet {
 	return s.api.GetByKey(key)
 }
 
-func (s *TipSetsService) PushTipSetsToRevert(tipset *TipSetWithState, ctx context.Context) {
-	s.push(datastore.TopicTipsetsToRevert, tipset, ctx)
+func (s *TipSetsService) PushTipSetsToRevert(height int, ctx context.Context) {
+	s.ds.Push(datastore.TopicTipsetsToRevert, map[string]interface{}{strconv.Itoa(height): height}, ctx)
 }
 
 func (s *TipSetsService) Push(tipset *TipSetWithState, ctx context.Context) {

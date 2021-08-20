@@ -11,7 +11,9 @@ import (
 	"github.com/p2p-org/mbelt-filecoin-streamer/client"
 	"github.com/p2p-org/mbelt-filecoin-streamer/config"
 	"github.com/p2p-org/mbelt-filecoin-streamer/datastore"
+	"github.com/p2p-org/mbelt-filecoin-streamer/datastore/utils"
 	"log"
+	"math/big"
 )
 
 type MessagesService struct {
@@ -22,7 +24,7 @@ type MessagesService struct {
 
 type MessageExtended struct {
 	Cid           cid.Cid
-	BlockCid      cid.Cid
+	BlockCids     map[cid.Cid]struct{}
 	Height        abi.ChainEpoch
 	Message       *types.Message
 	FromId        *address.Address
@@ -37,6 +39,28 @@ type MessageExtended struct {
 type MessageReceiptWithCid struct {
 	Cid     cid.Cid
 	Receipt *types.MessageReceipt
+}
+
+type MessageFromDb struct {
+	Cid        string
+	Height     int64
+	BlockCids  []string
+	Method     int
+	MethodName string
+	From       string
+	FromId     string
+	FromType   string
+	To         string
+	ToId       string
+	ToType     string
+	Value      big.Int
+	GasLimit   big.Int
+	GasPremium big.Int
+	GasFeeCap  big.Int
+	GasUsed    big.Int
+	BaseFee    big.Int
+	ExitCode   int
+	BlockTime  int64
 }
 
 func Init(config *config.Config, ds *datastore.KafkaDatastore, apiClient *client.APIClient) (*MessagesService, error) {
@@ -110,18 +134,30 @@ func (s *MessagesService) PushReceipts(receipts []*MessageReceiptWithCid, ctx co
 }
 
 func serializeMessage(extMessage *MessageExtended) map[string]interface{} {
+	blockCids := make([]cid.Cid, 0, len(extMessage.BlockCids))
+	for k, _ := range extMessage.BlockCids {
+		blockCids = append(blockCids, k)
+	}
+
+	var fromId, toId string
+	if extMessage.FromId != nil {
+		fromId = extMessage.FromId.String()
+	}
+	if extMessage.ToId != nil {
+		toId = extMessage.ToId.String()
+	}
 
 	result := map[string]interface{}{
 		"cid":         extMessage.Cid.String(),
 		"height":      extMessage.Height,
-		"block_cid":   extMessage.BlockCid.String(),
+		"block_cids":  utils.CidsToVarcharArray(blockCids),
 		"method":      extMessage.Message.Method,
 		"method_name": extMessage.MethodName,
 		"from":        extMessage.Message.From.String(),
-		"from_id":     extMessage.FromId.String(),
+		"from_id":     fromId,
 		"from_type":   extMessage.FromType,
 		"to":          extMessage.Message.To.String(),
-		"to_id":       extMessage.ToId.String(),
+		"to_id":       toId,
 		"to_type":     extMessage.ToType,
 		"value":       extMessage.Message.ValueReceived(),
 		"gas_limit":   extMessage.Message.GasLimit,

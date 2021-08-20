@@ -13,6 +13,7 @@ var (
 	// Used for flags.
 	sync             bool
 	syncForce        bool
+	follow           bool
 	updHead          bool
 	syncFrom         int
 	syncFromDbOffset int
@@ -20,13 +21,13 @@ var (
 	conf *config.Config
 
 	rootCmd = &cobra.Command{
-		Use:   "[--sync | --sync-force] [--sub-head-updates] [--sync-from=<height>] [--sync-from-db-offset=<offset>]",
+		Use:   "[--sync | --sync-force] [--follow-chain-sync] [--sub-head-updates] [--sync-from=<height>] [--sync-from-db-offset=<offset>]",
 		Short: "A streamer of filecoin's entities to PostgreSQL DB through Kafka",
 		Long: `This app synchronizes with current filecoin state and keeps in sync by subscribing on it's updates.
 Entities (tipsets, blocks and messages) are being pushed to Kafka. There are also sinks that get
 those entities from Kafka streams and push them in PostgreSQL DB.`,
 		Run: func(cmd *cobra.Command, args []string) {
-			worker.Start(conf, sync, syncForce, updHead, syncFrom, syncFromDbOffset)
+			worker.Start(conf, sync, syncForce, follow, updHead, syncFrom, syncFromDbOffset)
 		},
 	}
 )
@@ -38,6 +39,8 @@ func init() {
 		"Turn on sync starting from last block in DB")
 	rootCmd.PersistentFlags().BoolVarP(&syncForce, "sync-force", "f", false,
 		"Turn on sync starting from genesis block")
+	rootCmd.PersistentFlags().BoolVarP(&follow, "follow-chain-sync", "U",true,
+		"After syncing to current head follow chain sync quering currHeadHeight + 1, not via head updates")
 	rootCmd.PersistentFlags().BoolVarP(&updHead, "sub-head-updates", "u", true,
 		"Turn on subscription on head updates")
 	rootCmd.PersistentFlags().IntVarP(&syncFrom, "sync-from", "F", -1,
@@ -47,11 +50,13 @@ func init() {
 
 	viper.BindPFlag("sync", rootCmd.PersistentFlags().Lookup("sync"))
 	viper.BindPFlag("sync_force", rootCmd.PersistentFlags().Lookup("sync-force"))
+	viper.BindPFlag("follow_chain_sync", rootCmd.PersistentFlags().Lookup("follow-chain-sync"))
 	viper.BindPFlag("sub_head_updates", rootCmd.PersistentFlags().Lookup("sub-head-updates"))
 	viper.BindPFlag("sync_from", rootCmd.PersistentFlags().Lookup("sync-from"))
 	viper.BindPFlag("sync_from_db_offset", rootCmd.PersistentFlags().Lookup("sync-from-db-offset"))
 	viper.SetDefault("sync", true)
 	viper.SetDefault("sync_force", false)
+	viper.SetDefault("follow_chain_sync", true)
 	viper.SetDefault("sub_head_updates", true)
 	viper.SetDefault("sync_from", -1)
 	viper.SetDefault("sync_from_db_offset", 100)

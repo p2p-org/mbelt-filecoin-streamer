@@ -29,7 +29,7 @@ func init() {
 		"Don's start checks by timer, just exit after one check")
 	watchdogCmd.PersistentFlags().IntVarP(&timeBetweenChecks, "time-between-checks", "t", 35,
 		"Time to wait before starting new check.")
-	watchdogCmd.PersistentFlags().IntVarP(&checkFrom, "check-from", "cw", 0,
+	watchdogCmd.PersistentFlags().IntVarP(&checkFrom, "check-from", "c", 0,
 		"Height to start checks from")
 
 	viper.BindPFlag("exit_after_one_check", watchdogCmd.PersistentFlags().Lookup("exit-after-one-check"))

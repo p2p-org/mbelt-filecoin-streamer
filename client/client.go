@@ -12,6 +12,7 @@ import (
 	"github.com/filecoin-project/lotus/chain/types"
 	"github.com/filecoin-project/specs-actors/v3/actors/builtin/miner"
 	"github.com/ipfs/go-cid"
+	"github.com/libp2p/go-libp2p-core/peer"
 	"io/ioutil"
 	"log"
 	"net/http"
@@ -255,7 +256,7 @@ func (c *APIClient) GetByHeight(height abi.ChainEpoch) (*types.TipSet, bool) {
 	err := client.Do(ChainGetTipSetByHeight, []interface{}{height, types.EmptyTSK}, resp)
 	if err != nil {
 		log.Println("[API][Error][GetByHeight]", err)
-		return nil, true
+		return nil, false
 	}
 
 	c.wsClientPool.Put(client)
@@ -268,7 +269,7 @@ func (c *APIClient) GetByHeight(height abi.ChainEpoch) (*types.TipSet, bool) {
 		}
 		return nil, true
 	}
-	return resp.Result, true
+	return resp.Result, false
 }
 
 func (c *APIClient) GetByHeightHttp(height abi.ChainEpoch) (*types.TipSet, bool) {
@@ -730,7 +731,7 @@ func (c *APIClient) LookupID(actor address.Address, tsk *types.TipSetKey) *addre
 func (c *APIClient) LookupIDHttp(actor address.Address, tsk *types.TipSetKey) *address.Address {
 	resp := &AddressResponse{}
 	var err error
-	if tsk != nil {
+	if tsk == nil {
 		err = c.do(StateLookupID, []interface{}{actor, nil}, resp)
 	} else {
 		err = c.do(StateLookupID, []interface{}{actor, *tsk}, resp)
@@ -785,4 +786,96 @@ func (c *APIClient) AccountKeyHttp(actor address.Address, tsk *types.TipSetKey) 
 		return nil
 	}
 	return &resp.Result
+}
+
+func (c *APIClient) NetworkName() string {
+	client := c.wsClientPool.Get()
+	resp := &StringResponse{}
+
+	err := client.Do(StateNetworkName, []interface{}{}, resp)
+
+	if err != nil {
+		log.Println("[API][Error][NetworkName]", err)
+	}
+
+	c.wsClientPool.Put(client)
+
+	if resp.Error != nil {
+		log.Println("[API][Error][NetworkName]", resp.Error.Message)
+	}
+
+	return resp.Result
+}
+
+func (c *APIClient) NetworkNameHttp() string {
+	resp := &StringResponse{}
+
+	err := c.do(StateNetworkName, []interface{}{}, resp)
+
+	if err != nil {
+		log.Println("[API][Error][NetworkName]", err)
+	}
+
+	if resp.Error != nil {
+		log.Println("[API][Error][NetworkName]", resp.Error.Message)
+	}
+	return resp.Result
+}
+
+func (c *APIClient) NetworkVersion(tsk *types.TipSetKey) int {
+	client := c.wsClientPool.Get()
+	resp := &IntResponse{}
+
+	var err error
+	if tsk == nil {
+		err = c.do(StateNetworkVersion, []interface{}{nil}, resp)
+	} else {
+		err = c.do(StateNetworkVersion, []interface{}{*tsk}, resp)
+	}
+
+	if err != nil {
+		log.Println("[API][Error][NetworkVersion]", err)
+	}
+
+	c.wsClientPool.Put(client)
+
+	if resp.Error != nil {
+		log.Println("[API][Error][NetworkVersion]", resp.Error.Message)
+	}
+
+	return resp.Result
+}
+
+func (c *APIClient) NetworkVersionHttp(tsk *types.TipSetKey) int {
+	resp := &IntResponse{}
+
+	var err error
+	if tsk == nil {
+		err = c.do(StateNetworkName, []interface{}{nil}, resp)
+	} else {
+		err = c.do(StateNetworkName, []interface{}{*tsk}, resp)
+	}
+
+	if err != nil {
+		log.Println("[API][Error][NetworkVersion]", err)
+	}
+
+	if resp.Error != nil {
+		log.Println("[API][Error][NetworkVersion]", resp.Error.Message)
+	}
+	return resp.Result
+}
+
+func (c *APIClient) NetPeersHttp() []*peer.AddrInfo {
+	resp := &PeersResponse{}
+
+	err := c.do(NetPeers, []interface{}{}, resp)
+	if err != nil {
+		log.Println("[API][Error][NetPeers]", err)
+	}
+
+	if resp.Error != nil {
+		log.Println("[API][Error][NetPeers]", resp.Error.Message)
+	}
+	return resp.Result
 }

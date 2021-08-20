@@ -2,6 +2,7 @@ package watchdog
 
 import (
 	"context"
+	"database/sql"
 	"github.com/filecoin-project/go-state-types/abi"
 	"github.com/ipfs/go-cid"
 	"github.com/p2p-org/mbelt-filecoin-streamer/config"
@@ -44,7 +45,7 @@ func Start(conf *config.Config, exitAfterOneCheck bool, timeBetweenChecks int, c
 }
 
 func checkConsistency(ctx context.Context) {
-	heightFromDb, err := services.App().BlocksService().GetMaxHeightFromDB()
+	heightFromDb, err := services.App().PgDatastore().GetMaxHeight()
 	if err != nil {
 		log.Println("[Watchdog][checkConsistency][Error] Can't get max height from postgres DB...")
 		log.Println(err)
@@ -59,18 +60,37 @@ func checkConsistency(ctx context.Context) {
 			log.Println("Checking consistency... Last checked height:", lastCheckedHeight, "height from DB:", heightFromDb)
 
 			blocks, state, err := services.App().PgDatastore().GetTipSetBlocksAndStateByHeight(lastCheckedHeight)
-			if err != nil {
+			if err != nil && err != sql.ErrNoRows {
 				log.Println("[Watchdog][checkConsistency][Error] Can't get tipset's blocks and state from postgres DB...")
 				log.Println(err)
 				return
 			}
 
-			//TODO: what if we don't even have tipset of this height in db
+			//ts, _ := services.App().TipSetsService().GetByHeight(abi.ChainEpoch(lastCheckedHeight))
+
+			var cidsEqual bool
+			if blocks != nil {
+
+
+			}
+
+			if err == sql.ErrNoRows || blocks != nil || !cidsEqual {
+				services.App().TipSetsService().PushTipSetsToRevert(lastCheckedHeight, ctx)
+				ts, _ := services.App().SyncService().SyncTipSetForHeight(abi.ChainEpoch(lastCheckedHeight))
+				services.App().SyncService().CollectAndPushOtherEntitiesByTipSet(ts, ctx)
+				lastCheckedHeight++
+				continue
+			}
 
 			if state != 0 {
 				lastCheckedHeight++
 				continue
 			}
+
+
+
+
+			//TODO: what if we don't even have tipset of this height in db
 
 			countBlocks, err := services.App().PgDatastore().GetBlocksCountByHeight(lastCheckedHeight)
 			if err != nil {
@@ -113,6 +133,19 @@ func checkConsistency(ctx context.Context) {
 		}
 	}
 }
+
+//func cidsEqual(ts *types.TipSet, blocks []string) bool {
+//	cids := ts.Cids()
+//	if len(cids) != len(blocks) {
+//		return false
+//	}
+//
+//	for _, cid := range cids {
+//		for _, blCid := range blocks {
+//			if
+//		}
+//	}
+//}
 
 func scheduleChecks(timeBetweenChecks int, ctx context.Context) {
 	ticker := time.Tick(time.Duration(timeBetweenChecks) * time.Second)
