@@ -381,8 +381,23 @@ func (s *SyncService) CollectActorChanges(tipset *types.TipSet) (out []*state.Ac
 				actorsSeen[act.Head] = struct{}{}
 				wg.Add(1)
 
-				go collectChangesForActor(tsk, parents, height, parentState, a, act, wg, mut, &runningWorkers, out,
-					minerInfo, minerSectors, reward)
+				go func() {
+					defer func() {
+						atomic.AddUint32(&runningWorkers, ^uint32(0))
+						wg.Done()
+					}()
+
+					all, mi, ms, r := collectChangesForActor(tsk, parents, height, parentState, a, act)
+
+					mut.Lock()
+					out = append(out, all...)
+					minerInfo = append(minerInfo, mi...)
+					minerSectors = append(minerSectors, ms...)
+					if reward != nil {
+						reward = r
+					}
+					mut.Unlock()
+				}()
 
 				break
 			}
@@ -395,13 +410,8 @@ func (s *SyncService) CollectActorChanges(tipset *types.TipSet) (out []*state.Ac
 }
 
 func collectChangesForActor(tsk types.TipSetKey, parents types.TipSetKey, height abi.ChainEpoch, parentState cid.Cid,
-	a string, act types.Actor, wg *sync.WaitGroup, mut *sync.Mutex, runningWorkers *uint32, out []*state.ActorInfo,
-	minerInfo []*state.MinerInfo, minerSectors []*state.MinerSector, reward *state.RewardActor) {
-
-	defer func() {
-		atomic.AddUint32(runningWorkers, ^uint32(0))
-		wg.Done()
-	}()
+	a string, act types.Actor) (out []*state.ActorInfo, minerInfo []*state.MinerInfo, minerSectors []*state.MinerSector,
+	reward *state.RewardActor) {
 
 	has, err := App().StateService().ChainHasObj(act.Head)
 	if err != nil {
@@ -425,14 +435,12 @@ func collectChangesForActor(tsk types.TipSetKey, parents types.TipSetKey, height
 		power := App().StateService().GetMinerPower(addr, tsk)
 		// removed miners sectors collection because it takes too much resources to collect it like it's implemented here
 		//sectors := services.App().StateService().GetMinerSectors(addr, tsk)
-		mut.Lock()
 		minerInfo = append(minerInfo, &state.MinerInfo{
 			MinerInfo:  info,
 			MinerPower: power,
 			Miner:      addr,
 			Height:     height,
 		})
-		mut.Unlock()
 		//for _, sector := range sectors {
 		//	minerSectors = append(minerSectors, &state.MinerSector{
 		//		SectorOnChainInfo: sector,
@@ -459,7 +467,6 @@ func collectChangesForActor(tsk types.TipSetKey, parents types.TipSetKey, height
 	// parse reward
 	if addr == builtin.RewardActorAddr {
 		rewardState := parseRewardActorState(ast.State.(map[string]interface{}))
-		mut.Lock()
 		reward = &state.RewardActor{
 			Act:         act,
 			StateRoot:   parentState,
@@ -468,10 +475,8 @@ func collectChangesForActor(tsk types.TipSetKey, parents types.TipSetKey, height
 			Addr:        addr,
 			State:       rewardState,
 		}
-		mut.Unlock()
 	}
 
-	mut.Lock()
 	out = append(out, &state.ActorInfo{
 		Act:         act,
 		StateRoot:   parentState,
@@ -482,7 +487,8 @@ func collectChangesForActor(tsk types.TipSetKey, parents types.TipSetKey, height
 		State:       string(actorState),
 		Deleted:     !has,
 	})
-	mut.Unlock()
+
+	return out, minerInfo, minerSectors, reward
 }
 
 func parseRewardActorState(stateMap map[string]interface{}) *state.RewardActorState {
