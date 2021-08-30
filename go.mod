@@ -4,6 +4,7 @@ go 1.14
 
 require (
 	github.com/VictoriaMetrics/fastcache v1.5.8
+	github.com/afiskon/promtail-client v0.0.0-20190305142237-506f3f921e9c
 	github.com/btcsuite/btcutil v1.0.2
 	github.com/coinbase/rosetta-sdk-go v0.6.10
 	github.com/filecoin-project/go-address v0.0.5

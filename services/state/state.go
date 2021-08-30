@@ -5,6 +5,8 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"github.com/afiskon/promtail-client/promtail"
+	"github.com/btcsuite/btcutil/base58"
 	"github.com/filecoin-project/go-address"
 	"github.com/filecoin-project/go-state-types/abi"
 	"github.com/filecoin-project/lotus/api"
@@ -16,8 +18,6 @@ import (
 	"github.com/p2p-org/mbelt-filecoin-streamer/config"
 	"github.com/p2p-org/mbelt-filecoin-streamer/datastore"
 	"github.com/p2p-org/mbelt-filecoin-streamer/datastore/utils"
-	"github.com/btcsuite/btcutil/base58"
-	"log"
 	"math/big"
 )
 
@@ -25,6 +25,7 @@ type StateService struct {
 	config *config.Config
 	ds     *datastore.KafkaDatastore
 	api    *client.APIClient
+	logger promtail.Client
 }
 
 type ActorInfo struct {
@@ -91,11 +92,12 @@ type ActorFromDb struct {
 	Addr      string
 }
 
-func Init(config *config.Config, kafkaDs *datastore.KafkaDatastore, apiClient *client.APIClient) (*StateService, error) {
+func Init(conf *config.Config, ds *datastore.KafkaDatastore, api *client.APIClient, l promtail.Client) (*StateService, error) {
 	return &StateService{
-		config: config,
-		ds:     kafkaDs,
-		api:    apiClient,
+		config: conf,
+		ds:     ds,
+		api:    api,
+		logger: l,
 	}, nil
 }
 
@@ -155,7 +157,7 @@ func (s *StateService) PushActors(actors []*ActorInfo, ctx context.Context) {
 	// Empty actor produces panic
 	defer func() {
 		if r := recover(); r != nil {
-			log.Println("[StateService][PushActors][Recover]", "Throw panic", r)
+			s.logger.Errorf("[StateService][PushActors][Recover] Panic thrown: %s", r)
 		}
 	}()
 
@@ -180,7 +182,7 @@ func (s *StateService) PushMinersInfo(minersInfo []*MinerInfo, ctx context.Conte
 	// Empty miner info produces panic
 	defer func() {
 		if r := recover(); r != nil {
-			log.Println("[StateService][PushMinersInfo][Recover]", "Throw panic", r)
+			s.logger.Errorf("[StateService][PushMinersInfo][Recover] Panic thrown: %s", r)
 		}
 	}()
 
@@ -205,7 +207,7 @@ func (s *StateService) PushMinersSectors(minersSectors []*MinerSector, ctx conte
 	// Empty miner sector produces panic
 	defer func() {
 		if r := recover(); r != nil {
-			log.Println("[StateService][PushMinersSectors][Recover]", "Throw panic", r)
+			s.logger.Errorf("[StateService][PushMinersSectors][Recover] Panic thrown: %s", r)
 		}
 	}()
 
@@ -230,7 +232,7 @@ func (s *StateService) PushRewardActorStates(actor *RewardActor, ctx context.Con
 	// Empty reward actor produces panic
 	defer func() {
 		if r := recover(); r != nil {
-			log.Println("[StateService][PushRewardActorStates][Recover]", "Throw panic", r)
+			s.logger.Errorf("[StateService][PushRewardActorStates][Recover] Panic thrown: %s", r)
 		}
 	}()
 
@@ -287,7 +289,7 @@ func serializeMinerInfo(info *MinerInfo, key string) map[string]interface{} {
 		"worker":                        info.Worker.String(),
 		"control_addresses":             utils.AddressesToVarcharArray(info.ControlAddresses),
 		"new_worker_address":            newWorkerAddress,
-		"new_worker_effective_at":       newWorkerEffectiveAt,
+		"new_worker_effective_at":       newWorkerEffectiveAt.String(),
 		"peer_id":                       base58.Encode(info.PeerId),
 		"multiaddrs":                    utils.MultiaddrsToVarcharArray(info.Multiaddrs),
 		"sector_size":                   info.SectorSize,

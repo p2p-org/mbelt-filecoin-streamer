@@ -2,13 +2,13 @@ package tipsets
 
 import (
 	"context"
+	"github.com/afiskon/promtail-client/promtail"
 	"github.com/filecoin-project/go-state-types/abi"
 	"github.com/filecoin-project/lotus/chain/types"
 	"github.com/p2p-org/mbelt-filecoin-streamer/client"
 	"github.com/p2p-org/mbelt-filecoin-streamer/config"
 	"github.com/p2p-org/mbelt-filecoin-streamer/datastore"
 	"github.com/p2p-org/mbelt-filecoin-streamer/datastore/utils"
-	"log"
 	"math/big"
 	"strconv"
 )
@@ -23,6 +23,7 @@ type TipSetsService struct {
 	config *config.Config
 	ds     *datastore.KafkaDatastore
 	api    *client.APIClient
+	logger promtail.Client
 }
 
 type TipSetWithState struct {
@@ -40,11 +41,12 @@ type TipSetFromDb struct {
 	State uint8
 }
 
-func Init(config *config.Config, ds *datastore.KafkaDatastore, apiClient *client.APIClient) (*TipSetsService, error) {
+func Init(conf *config.Config, ds *datastore.KafkaDatastore, api *client.APIClient, l promtail.Client) (*TipSetsService, error) {
 	return &TipSetsService{
-		config: config,
+		config: conf,
 		ds:     ds,
-		api:    apiClient,
+		api:    api,
+		logger: l,
 	}, nil
 }
 
@@ -79,7 +81,7 @@ func (s *TipSetsService) PushNormalState(tipset *types.TipSet, ctx context.Conte
 func (s *TipSetsService) push(topic string, tipset *TipSetWithState, ctx context.Context) {
 	defer func() {
 		if r := recover(); r != nil {
-			log.Println("[TipSetsService][Recover]", "Throw panic", r)
+			s.logger.Errorf("[TipSetsService][Recover] Panic thrown: %s", r)
 		}
 	}()
 

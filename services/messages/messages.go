@@ -3,6 +3,7 @@ package messages
 import (
 	"context"
 	"encoding/base64"
+	"github.com/afiskon/promtail-client/promtail"
 	"github.com/filecoin-project/go-address"
 	"github.com/filecoin-project/go-state-types/abi"
 	"github.com/filecoin-project/lotus/api"
@@ -12,7 +13,6 @@ import (
 	"github.com/p2p-org/mbelt-filecoin-streamer/config"
 	"github.com/p2p-org/mbelt-filecoin-streamer/datastore"
 	"github.com/p2p-org/mbelt-filecoin-streamer/datastore/utils"
-	"log"
 	"math/big"
 )
 
@@ -20,6 +20,7 @@ type MessagesService struct {
 	config *config.Config
 	ds     *datastore.KafkaDatastore
 	api    *client.APIClient
+	logger promtail.Client
 }
 
 type MessageExtended struct {
@@ -63,11 +64,12 @@ type MessageFromDb struct {
 	BlockTime  int64
 }
 
-func Init(config *config.Config, ds *datastore.KafkaDatastore, apiClient *client.APIClient) (*MessagesService, error) {
+func Init(conf *config.Config, ds *datastore.KafkaDatastore, api *client.APIClient, l promtail.Client) (*MessagesService, error) {
 	return &MessagesService{
-		config: config,
+		config: conf,
 		ds:     ds,
-		api:    apiClient,
+		api:    api,
+		logger: l,
 	}, nil
 }
 
@@ -91,7 +93,7 @@ func (s *MessagesService) Push(messages []*MessageExtended, ctx context.Context)
 	// Empty messages has panic
 	defer func() {
 		if r := recover(); r != nil {
-			log.Println("[MessagesService][Recover]", "Throw panic", r)
+			s.logger.Errorf("[MessagesService][Recover] Panic thrown: %s", r)
 		}
 	}()
 
@@ -114,7 +116,7 @@ func (s *MessagesService) PushReceipts(receipts []*MessageReceiptWithCid, ctx co
 	// Empty messages has panic
 	defer func() {
 		if r := recover(); r != nil {
-			log.Println("[MessagesService][Recover]", "Throw panic", r)
+			s.logger.Errorf("[MessagesService][Recover] Panic thrown: %s", r)
 		}
 	}()
 

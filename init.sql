@@ -704,12 +704,12 @@ BEGIN
             NEW."peer_id",
             NEW."multiaddrs"::VARCHAR(256)[],
             NEW."seal_proof_type",
-            NEW."sector_size"::DECIMAL(100, 0),
-            NEW."window_post_partition_sectors"::DECIMAL(100, 0),
-            NEW."miner_raw_byte_power"::DECIMAL(100, 0),
-            NEW."miner_quality_adj_power"::DECIMAL(100, 0),
-            NEW."total_raw_byte_power"::DECIMAL(100, 0),
-            NEW."total_quality_adj_power"::DECIMAL(100, 0),
+            NEW."sector_size"::BIGINT,
+            NEW."window_post_partition_sectors"::BIGINT,
+            NEW."miner_raw_byte_power"::BIGINT,
+            NEW."miner_quality_adj_power"::BIGINT,
+            NEW."total_raw_byte_power"::BIGINT,
+            NEW."total_quality_adj_power"::BIGINT,
             NEW."height"::BIGINT)
     ON CONFLICT DO NOTHING;
 

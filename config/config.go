@@ -8,4 +8,6 @@ type Config struct {
 	KafkaHosts      string
 	KafkaAsyncWrite bool
 	PgUrl           string
+	LokiUrl         string
+	LokiSourceName  string
 }

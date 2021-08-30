@@ -2,12 +2,12 @@ package blocks
 
 import (
 	"context"
+	"github.com/afiskon/promtail-client/promtail"
 	"github.com/filecoin-project/lotus/api"
 	"github.com/filecoin-project/lotus/chain/types"
 	"github.com/p2p-org/mbelt-filecoin-streamer/client"
 	"github.com/p2p-org/mbelt-filecoin-streamer/config"
 	"github.com/p2p-org/mbelt-filecoin-streamer/datastore"
-	"log"
 	"math/big"
 )
 
@@ -15,6 +15,7 @@ type BlocksService struct {
 	config  *config.Config
 	kafkaDs *datastore.KafkaDatastore
 	api     *client.APIClient
+	logger  promtail.Client
 }
 
 type BlockFromDb struct {
@@ -38,11 +39,12 @@ type BlockFromDbWithMessagesCids struct {
 	MessagesCids  []string
 }
 
-func Init(config *config.Config, kafkaDs *datastore.KafkaDatastore, apiClient *client.APIClient) (*BlocksService, error) {
+func Init(conf *config.Config, ds *datastore.KafkaDatastore, api *client.APIClient, l promtail.Client) (*BlocksService, error) {
 	return &BlocksService{
-		config:  config,
-		kafkaDs: kafkaDs,
-		api:     apiClient,
+		config:  conf,
+		kafkaDs: ds,
+		api:     api,
+		logger: l,
 	}, nil
 }
 
@@ -53,7 +55,7 @@ func (s *BlocksService) GetHeadUpdates(ctx context.Context, resChan *chan []*api
 func (s *BlocksService) Push(blocks []*types.BlockHeader, ctx context.Context) {
 	defer func() {
 		if r := recover(); r != nil {
-			log.Println("[BlocksService][Recover]", "Throw panic", r)
+			s.logger.Errorf("[BlocksService][Recover] Panic thrown: %s", r)
 		}
 	}()
 

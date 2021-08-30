@@ -4,10 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"github.com/afiskon/promtail-client/promtail"
 	"github.com/p2p-org/mbelt-filecoin-streamer/config"
+	"github.com/p2p-org/mbelt-filecoin-streamer/services"
 	"github.com/segmentio/kafka-go"
 	"github.com/segmentio/kafka-go/lz4"
-	"log"
 	"strings"
 	"time"
 )
@@ -23,12 +24,14 @@ const (
 	TopicMinerInfos        = "miner_infos_stream"
 	TopicMinerSectors      = "miner_sectors_stream"
 	TopicRewardActorStates = "reward_actor_states_stream"
+	kafkaDatastoreLokiJob  = "kafka_datastore"
 )
 
 type KafkaDatastore struct {
 	config       *config.Config
 	kafkaWriters map[string]*kafka.Writer
-	// ack   chan kafka.Event
+	// ack          chan kafka.Event
+	logger       promtail.Client
 }
 
 type kafkaMessage struct {
@@ -76,6 +79,13 @@ func Init(config *config.Config) (*KafkaDatastore, error) {
 		ds.kafkaWriters[topic] = writer
 	}
 
+	logger, err := services.InitLogger(config.LokiUrl, config.LokiSourceName, kafkaDatastoreLokiJob)
+	if err != nil {
+		return nil, err
+	}
+
+	ds.logger = logger
+
 	return ds, nil
 }
 
@@ -85,7 +95,7 @@ func (ds *KafkaDatastore) Push(topic string, m map[string]interface{}, ctx conte
 	for key, value := range m {
 		data, err := json.Marshal(value)
 		if err != nil {
-			log.Println("[KafkaDatastore][Error][runPusher]", "Cannot marshal push data", err)
+			ds.logger.Errorf("[KafkaDatastore][Error][runPusher]", "Cannot marshal push data", err)
 		}
 		kMsgs = append(kMsgs, kafka.Message{
 			Key:   []byte(key),
@@ -100,6 +110,6 @@ func (ds *KafkaDatastore) Push(topic string, m map[string]interface{}, ctx conte
 	err := ds.kafkaWriters[topic].WriteMessages(ctx, kMsgs...)
 
 	if err != nil {
-		log.Println("[KafkaDatastore][Error][runPusher]", "Cannot produce data", err)
+		ds.logger.Errorf("[KafkaDatastore][Error][runPusher]", "Cannot produce data", err)
 	}
 }

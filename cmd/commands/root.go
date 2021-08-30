@@ -75,6 +75,8 @@ func initConfig() {
 		KafkaHosts:      viper.GetString("KAFKA"), // "localhost:9092",
 		KafkaAsyncWrite: viper.GetBool("KAFKA_ASYNC_WRITE"),
 		PgUrl:           viper.GetString("PG_URL"),
+		LokiUrl:         viper.GetString("LOKI_URL"),
+		LokiSourceName:  viper.GetString("LOKI_SOURCE_NAME"),
 	}
 
 	banner := "\nMBELT_FILECOIN_STREAMER_API_URL = " + conf.APIUrl + "\n" +

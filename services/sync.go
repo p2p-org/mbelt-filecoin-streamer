@@ -3,6 +3,7 @@ package services
 import (
 	"context"
 	"encoding/json"
+	"github.com/afiskon/promtail-client/promtail"
 	"github.com/filecoin-project/go-address"
 	"github.com/filecoin-project/go-state-types/abi"
 	"github.com/filecoin-project/lotus/api"
@@ -36,14 +37,16 @@ const (
 )
 
 type SyncService struct {
-	config  *config.Config
-	ds      *datastore.KafkaDatastore
+	config *config.Config
+	ds     *datastore.KafkaDatastore
+	logger promtail.Client
 }
 
-func Init(config *config.Config, ds *datastore.KafkaDatastore) (*SyncService, error) {
+func Init(conf *config.Config, ds *datastore.KafkaDatastore, l promtail.Client) (*SyncService, error) {
 	return &SyncService{
-		config:  config,
+		config:  conf,
 		ds:      ds,
+		logger: l,
 	}, nil
 }
 
@@ -64,7 +67,7 @@ func (s *SyncService) UpdateHeads(ctx context.Context) {
 			return
 		case update := <-headUpdates:
 			if len(headUpdates) > 50 {
-				log.Println("[Sync][Debug][UpdateHeads]", "head uodates chan size", len(headUpdates))
+				s.logger.Warnf("[Sync][Debug][UpdateHeads] head updates chan size: %d", len(headUpdates))
 			}
 
 			for _, hu := range update {
@@ -73,7 +76,7 @@ func (s *SyncService) UpdateHeads(ctx context.Context) {
 					State:  tipsets.StateNormal,
 				}
 
-				log.Println("[Sync][Info]", "Got head update. Height:", tipSet.Height(), "type:", hu.Type)
+				s.logger.Infof("[Sync][Info] Got head update. Height: %d, type: %s", tipSet.Height(), hu.Type)
 
 				switch hu.Type {
 
@@ -81,7 +84,7 @@ func (s *SyncService) UpdateHeads(ctx context.Context) {
 					currentHeight := int(hu.Val.Height())
 					maxHeightInDb, err := App().PgDatastore().GetMaxHeight()
 					if err != nil {
-						log.Println("[Sync][Error][UpdateHeads]", "couldn't get max height from DB. Error:", err)
+						s.logger.Errorf("[Sync][Error][UpdateHeads] couldn't get max height from DB. Error: %s", err)
 						cancelHeadUpdates()
 						return
 					}
@@ -98,7 +101,7 @@ func (s *SyncService) UpdateHeads(ctx context.Context) {
 					s.CollectAndPushOtherEntitiesByTipSet(tipSet, ctx)
 
 				default:
-					log.Println("[Sync][Debug][UpdateHeads]", "yet unknown event encountered:", hu.Type)
+					s.logger.Errorf("[Sync][Debug][UpdateHeads] yet unknown event encountered: %s", hu.Type)
 					if hu.Val != nil {
 						// Pushing just in case
 						s.CollectAndPushOtherEntitiesByTipSet(tipSet, ctx)
@@ -112,7 +115,7 @@ func (s *SyncService) UpdateHeads(ctx context.Context) {
 func (s *SyncService) SyncFollow(ctx context.Context) {
 	lastHeight, err := App().PgDatastore().GetMaxHeight()
 	if err != nil {
-		log.Println("[Sync][Error][SyncFollow]", err)
+		s.logger.Errorf("[Sync][Error][SyncFollow] %s", err)
 	}
 
 	for {
@@ -135,7 +138,7 @@ func (s *SyncService) SyncToHead(from int, ctx context.Context) {
 	if head != nil {
 		s.SyncTo(from, int(head.Height()), ctx)
 	} else {
-		log.Println("[Sync][Debug][SyncToHead]", "Head is nil!")
+		s.logger.Warnf("[Sync][Debug][SyncToHead] Head is nil!")
 		s.SyncTo(from, 0, ctx)
 	}
 }
@@ -143,15 +146,14 @@ func (s *SyncService) SyncToHead(from int, ctx context.Context) {
 func (s *SyncService) SyncTo(from int, to int, ctx context.Context) {
 	syncHeight := abi.ChainEpoch(to)
 	if to <= from {
-		log.Println("[Sync][Debug][Sync]", "Specified sync height is too small, syncing to default height:", defaultHeight)
+		s.logger.Warnf("[Sync][Debug][Sync]Specified sync height is too small, syncing to default height: %d", defaultHeight)
 		syncHeight = defaultHeight
 	}
 
-	defer log.Println("[Sync][Info][Sync]", "finished sync")
+	defer s.logger.Warnf("[Sync][Info][Sync]", "finished sync")
 
 	startHeight := abi.ChainEpoch(from)
 	if startHeight <= 1 {
-		log.Println("getting genesis")
 		genesis := App().TipSetsService().GetGenesis()
 		App().TipSetsService().PushNormalState(genesis, ctx)
 		App().BlocksService().Push(genesis.Blocks(), ctx)
@@ -181,7 +183,7 @@ func (s *SyncService) SyncTo(from int, to int, ctx context.Context) {
 					tipSet, nullRound := s.SyncTipSetForHeight(height)
 
 					if tipSet == nil {
-						log.Println("[Sync][Error][Sync]", "Tipset is nil! Height:", height)
+						s.logger.Errorf("[Sync][Error][Sync]Tipset is nil! Height: %d", height)
 						return
 					}
 
@@ -200,11 +202,12 @@ func (s *SyncService) SyncTo(from int, to int, ctx context.Context) {
 }
 
 func (s *SyncService) SyncTipSetForHeight(height abi.ChainEpoch) (*tipsets.TipSetWithState, bool) {
+	// TODO: Change for a metric
 	log.Println("[Sync][Info]", "Load height:", height)
 
 	tipSet, heightReached := App().TipSetsService().GetByHeight(height)
 	if heightReached {
-		log.Println("[Sync][Debug]", "Height reached")
+		s.logger.Warnf("[Sync][Debug] Height reached")
 		return nil, false
 	}
 
@@ -214,7 +217,7 @@ func (s *SyncService) SyncTipSetForHeight(height abi.ChainEpoch) (*tipsets.TipSe
 	}
 
 	if tipSet != nil && tipSet.Height() < height {
-		log.Println("[Sync][Debug]", "Got null tipset on height:", height)
+		s.logger.Warnf("[Sync][Debug] Got null tipset on height: %d", height)
 
 		// sorry for pointer arithmetics magic but I need to change received tipsets height (which is unexported)
 		//to requested height without a lot of useless code only to solve this
@@ -343,13 +346,14 @@ func (s *SyncService) CollectActorChanges(tipset *types.TipSet) (out []*state.Ac
 
 	start := time.Now()
 	defer func() {
+		// TODO: change for a metrics
 		log.Println("Collected Actor Changes", "height:", height, "duration:", time.Since(start).String(), "actors count:", len(out),
 			"miner info count:", len(minerInfo), "miner sectors count:", len(minerSectors), "reward actor:", reward != nil)
 	}()
 
 	parentTipSet := App().TipSetsService().GetByKey(parents)
 	if parentTipSet == nil {
-		log.Println("[Sync][Debug][CollectActorChanges] parent is nil. height: ", height)
+		s.logger.Warnf("[Sync][Debug][CollectActorChanges] parent is nil. height: %s", height)
 		return nil, nil, nil, nil, nil
 	}
 	if parentTipSet.ParentState().Equals(tipset.ParentState()) {
@@ -387,7 +391,7 @@ func (s *SyncService) CollectActorChanges(tipset *types.TipSet) (out []*state.Ac
 						wg.Done()
 					}()
 
-					all, mi, ms, r := collectChangesForActor(tsk, parents, height, parentState, a, act)
+					all, mi, ms, r := s.collectChangesForActor(tsk, parents, height, parentState, a, act)
 
 					mut.Lock()
 					out = append(out, all...)
@@ -409,24 +413,24 @@ func (s *SyncService) CollectActorChanges(tipset *types.TipSet) (out []*state.Ac
 	return
 }
 
-func collectChangesForActor(tsk types.TipSetKey, parents types.TipSetKey, height abi.ChainEpoch, parentState cid.Cid,
+func (s *SyncService) collectChangesForActor(tsk types.TipSetKey, parents types.TipSetKey, height abi.ChainEpoch, parentState cid.Cid,
 	a string, act types.Actor) (out []*state.ActorInfo, minerInfo []*state.MinerInfo, minerSectors []*state.MinerSector,
 	reward *state.RewardActor) {
 
 	has, err := App().StateService().ChainHasObj(act.Head)
 	if err != nil {
-		log.Println("[Sync][Error][CollectActorChanges]", err)
+		s.logger.Errorf("[Sync][Error][CollectActorChanges] %s", err)
 	}
 
 	addr, err := address.NewFromString(a)
 	if err != nil {
-		log.Println("[Sync][Error][CollectActorChanges]", err)
+		s.logger.Errorf("[Sync][Error][CollectActorChanges] %s", err)
 		return
 	}
 
 	actorName, err := getAddressType(addr, nil)
 	if err != nil {
-		log.Println("[Sync][Error][CollectActorChanges]", err)
+		s.logger.Errorf("[Sync][Error][CollectActorChanges] %s", err)
 	}
 
 	// miner info collection
@@ -454,13 +458,13 @@ func collectChangesForActor(tsk types.TipSetKey, parents types.TipSetKey, height
 
 	ast := App().StateService().ReadState(addr, tsk)
 	if ast == nil {
-		log.Println("[Sync][Error][CollectActorChanges]", "empty state!", "address:", addr.String())
+		s.logger.Warnf("[Sync][Error][CollectActorChanges] empty state for address: %s", addr.String())
 		return
 	}
 
 	actorState, err := json.Marshal(ast.State)
 	if err != nil {
-		log.Println("[Sync][Error][CollectActorChanges]", err)
+		s.logger.Errorf("[Sync][Error][CollectActorChanges] %s", err)
 		return
 	}
 

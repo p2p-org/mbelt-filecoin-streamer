@@ -3,6 +3,7 @@ package watchdog
 import (
 	"context"
 	"database/sql"
+	"github.com/afiskon/promtail-client/promtail"
 	"github.com/filecoin-project/go-state-types/abi"
 	"github.com/ipfs/go-cid"
 	"github.com/p2p-org/mbelt-filecoin-streamer/config"
@@ -14,15 +15,28 @@ import (
 	"time"
 )
 
+const watchdogLokiJob = "watchdog"
+
 var lastCheckedHeight int = 0
+var logger promtail.Client
 
 func Start(conf *config.Config, exitAfterOneCheck bool, timeBetweenChecks int, checkFrom int) {
-	exitCode := 0
+	var (
+		exitCode int
+		err error
+	)
 	defer os.Exit(exitCode)
 
-	err := services.InitServices(conf)
+	logger, err = services.InitLogger(conf.LokiUrl, conf.LokiSourceName, watchdogLokiJob)
 	if err != nil {
-		log.Println("[Watchdog][Debug]", "Cannot init services:", err)
+		log.Println("[Watchdog][Debug]", "Cannot init promtail client:", err)
+		exitCode = 1
+		return
+	}
+
+	err = services.InitServices(conf)
+	if err != nil {
+		logger.Errorf("[Watchdog][Debug] Cannot init services: %s", err)
 		exitCode = 1
 		return
 	}
@@ -47,8 +61,7 @@ func Start(conf *config.Config, exitAfterOneCheck bool, timeBetweenChecks int, c
 func checkConsistency(ctx context.Context) {
 	heightFromDb, err := services.App().PgDatastore().GetMaxHeight()
 	if err != nil {
-		log.Println("[Watchdog][checkConsistency][Error] Can't get max height from postgres DB...")
-		log.Println(err)
+		logger.Errorf("[Watchdog][checkConsistency][Error] Can't get max height from postgres DB. Error: %s", err)
 		return
 	}
 
@@ -57,12 +70,12 @@ func checkConsistency(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		default:
+			// TODO: change for prom metrics
 			log.Println("Checking consistency... Last checked height:", lastCheckedHeight, "height from DB:", heightFromDb)
 
 			blocks, state, err := services.App().PgDatastore().GetTipSetBlocksAndStateByHeight(lastCheckedHeight)
 			if err != nil && err != sql.ErrNoRows {
-				log.Println("[Watchdog][checkConsistency][Error] Can't get tipset's blocks and state from postgres DB...")
-				log.Println(err)
+				logger.Errorf("[Watchdog][checkConsistency][Error] Can't get tipset's blocks and state from postgres DB. Error: %s", err)
 				return
 			}
 
@@ -70,7 +83,7 @@ func checkConsistency(ctx context.Context) {
 
 			var cidsEqual bool
 			if blocks != nil {
-
+				// TODO
 
 			}
 
@@ -94,15 +107,13 @@ func checkConsistency(ctx context.Context) {
 
 			countBlocks, err := services.App().PgDatastore().GetBlocksCountByHeight(lastCheckedHeight)
 			if err != nil {
-				log.Println("[Watchdog][checkConsistency][Error] Can't get blocks count by height from postgres DB...")
-				log.Println(err)
+				logger.Errorf("[Watchdog][checkConsistency][Error] Can't get blocks count by height from postgres DB. Error: %s", err)
 				return
 			}
 
 			countMsgs, err := services.App().PgDatastore().GetMessagesCountByHeight(lastCheckedHeight)
 			if err != nil {
-				log.Println("[Watchdog][checkConsistency][Error] Can't get messages count by height from postgres DB...")
-				log.Println(err)
+				logger.Errorf("[Watchdog][checkConsistency][Error] Can't get messages count by height from postgres DB. Error: %s")
 				return
 			}
 
@@ -110,8 +121,7 @@ func checkConsistency(ctx context.Context) {
 			for _, cidRaw := range blocks {
 				blkCid, err := cid.Decode(cidRaw)
 				if err != nil {
-					log.Println("[Watchdog][checkConsistency][Error] Couldn't decode block cid.")
-					log.Println(err)
+					logger.Errorf("[Watchdog][checkConsistency][Error] Couldn't decode block cid. Error: %s", err)
 				}
 
 				blkMsgs := services.App().MessagesService().GetBlockMessages(blkCid)
@@ -121,9 +131,9 @@ func checkConsistency(ctx context.Context) {
 			}
 
 			if len(blocks) > countBlocks || len(msgCids) > countMsgs {
-				log.Println("Inconsistency found at height", lastCheckedHeight, "blocks in DB:", countBlocks,
-					"blocks in tipset:", len(blocks), "messages in DB:", countMsgs, "messages from lotus:", len(msgCids),
-					"collecting entities")
+				logger.Warnf("Inconsistency found at height: %d. Blocks in DB: %d. Blocks in tipset: %d." +
+					" Messages id DB: %d. Messages from lotus: %d. Collecting entities...",
+					lastCheckedHeight, countBlocks, len(blocks), countMsgs, len(msgCids))
 				ts, _ := services.App().SyncService().SyncTipSetForHeight(abi.ChainEpoch(lastCheckedHeight))
 				services.App().SyncService().CollectAndPushOtherEntitiesByTipSet(ts, ctx)
 				continue

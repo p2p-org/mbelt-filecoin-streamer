@@ -19,7 +19,7 @@ func InitServices(config *config.Config) error {
 		return err
 	}
 
-	apiClient, err := client.Init(config.APIUrl, config.APIWsUrl, config.APIToken)
+	apiClient, err := client.Init(config)
 	if err != nil {
 		return err
 	}

@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/afiskon/promtail-client/promtail"
 	"github.com/filecoin-project/go-address"
 	"github.com/filecoin-project/go-state-types/abi"
 	"github.com/filecoin-project/lotus/api"
@@ -13,6 +14,8 @@ import (
 	"github.com/filecoin-project/specs-actors/v3/actors/builtin/miner"
 	"github.com/ipfs/go-cid"
 	"github.com/libp2p/go-libp2p-core/peer"
+	"github.com/p2p-org/mbelt-filecoin-streamer/config"
+	"github.com/p2p-org/mbelt-filecoin-streamer/services"
 	"io/ioutil"
 	"log"
 	"net/http"
@@ -23,6 +26,7 @@ import (
 const (
 	protocolVersion    = "2.0"
 	httpRequestTimeout = 60 * time.Second
+	apiClientLokiJob   = "api_client"
 )
 
 type APIClient struct {
@@ -31,6 +35,8 @@ type APIClient struct {
 	jwt   string
 
 	wsClientPool WsClientPool
+
+	logger promtail.Client
 }
 
 type APIErr struct {
@@ -51,21 +57,28 @@ type APIResponse struct {
 	Error   *APIErr `json:"error"`
 }
 
-func Init(url, wsUrl, jwt string) (*APIClient, error) {
+func Init(conf *config.Config) (*APIClient, error) {
 	c := &APIClient{
-		url:   url,
-		wsUrl: wsUrl,
-		jwt:   jwt,
+		url:   conf.APIUrl,
+		wsUrl: conf.APIWsUrl,
+		jwt:   conf.APIToken,
 
-		wsClientPool: NewWsClientPool(wsUrl),
+		wsClientPool: NewWsClientPool(conf.APIWsUrl),
 	}
 
 	testGenesis := c.GetGenesis()
 
 	if testGenesis == nil {
-		log.Println("[APIClient][Error][Init] Cannot init api client")
+		log.Println("Cannot init api client")
 		return nil, errors.New("cannot get genesis")
 	}
+
+	logger, err := services.InitLogger(conf.LokiUrl, conf.LokiSourceName, apiClientLokiJob)
+	if err != nil {
+		return nil, err
+	}
+
+	c.logger = logger
 
 	return c, nil
 }
@@ -99,13 +112,13 @@ func (c *APIClient) do(method string, params []interface{}, dst interface{}) err
 	resp, err := client.Do(request)
 
 	if err != nil {
-		log.Println("[APIClient][Error][Send]", err)
+		c.logger.Errorf("[APIClient][Error][Send] %s", err)
 		time.Sleep(time.Millisecond * 100)
 		return errors.New("cannot process request")
 	}
 
 	if resp.StatusCode != 200 {
-		log.Println("[APIClient][Error][Send] Error status code", resp.StatusCode)
+		c.logger.Errorf("[APIClient][Error][Send] Error status code: %d", resp.StatusCode)
 		return errors.New("cannot process request")
 	}
 
@@ -122,14 +135,14 @@ func (c *APIClient) GetGenesis() *types.TipSet {
 	resp := &TipSet{}
 	err := client.Do(ChainGetGenesis, nil, resp)
 	if err != nil {
-		log.Println("[API][Error][GetGenesis]", err)
+		c.logger.Errorf("[API][Error][GetGenesis] %s", err)
 		return nil
 	}
 
 	c.wsClientPool.Put(client)
 
 	if resp.Error != nil {
-		log.Println("[API][Error][GetGenesis]", resp.Error.Message)
+		c.logger.Errorf("[API][Error][GetGenesis] %s", resp.Error.Message)
 		return nil
 	}
 	return resp.Result
@@ -139,12 +152,12 @@ func (c *APIClient) GetGenesisHttp() *types.TipSet {
 	resp := &TipSet{}
 	err := c.do(ChainGetGenesis, nil, resp)
 	if err != nil {
-		log.Println("[API][Error][GetGenesis]", err)
+		c.logger.Errorf("[API][Error][GetGenesis] %s", err)
 		return nil
 	}
 
 	if resp.Error != nil {
-		log.Println("[API][Error][GetGenesis]", resp.Error.Message)
+		c.logger.Errorf("[API][Error][GetGenesis] %s", resp.Error.Message)
 		return nil
 	}
 	return resp.Result
@@ -155,14 +168,14 @@ func (c *APIClient) GetHead() *types.TipSet {
 	resp := &TipSet{}
 	err := client.Do(ChainHead, nil, resp)
 	if err != nil {
-		log.Println("[API][Error][GetHead]", err)
+		c.logger.Errorf("[API][Error][GetHead] %s", err)
 		return nil
 	}
 
 	c.wsClientPool.Put(client)
 
 	if resp.Error != nil {
-		log.Println("[API][Error][GetHead]", resp.Error.Message)
+		c.logger.Errorf("[API][Error][GetHead] %s", resp.Error.Message)
 		return nil
 	}
 	return resp.Result
@@ -172,12 +185,12 @@ func (c *APIClient) GetHeadHttp() *types.TipSet {
 	resp := &TipSet{}
 	err := c.do(ChainHead, nil, resp)
 	if err != nil {
-		log.Println("[API][Error][GetHead]", err)
+		c.logger.Errorf("[API][Error][GetHead] %s", err)
 		return nil
 	}
 
 	if resp.Error != nil {
-		log.Println("[API][Error][GetHead]", resp.Error.Message)
+		c.logger.Errorf("[API][Error][GetHead] %s", resp.Error.Message)
 		return nil
 	}
 	return resp.Result
@@ -187,7 +200,7 @@ func (c *APIClient) GetHeadUpdates(ctx context.Context, resChan *chan []*api.Hea
 	// Creating new client because there is no profit to get it from pool because we will never put it back
 	jrpcClient, err := NewClient(c.wsUrl)
 	if err != nil {
-		log.Println("[API][Error][GetHeadUpdates]", err)
+		c.logger.Errorf("[API][Error][GetHeadUpdates] %s", err)
 		return
 	}
 
@@ -195,7 +208,7 @@ func (c *APIClient) GetHeadUpdates(ctx context.Context, resChan *chan []*api.Hea
 	subCtx, subCancel := context.WithCancel(ctx)
 	_, err = jrpcClient.Subscribe(ChainNotify, nil, &cons, subCtx)
 	if err != nil {
-		log.Println("[API][Error][GetHeadUpdates]", err)
+		c.logger.Errorf("[API][Error][GetHeadUpdates] %s", err)
 		return
 	}
 
@@ -205,7 +218,7 @@ func (c *APIClient) GetHeadUpdates(ctx context.Context, resChan *chan []*api.Hea
 			upd := &HeadUpdates{}
 			err := json.Unmarshal(val, upd)
 			if err != nil {
-				log.Println("[API][Error][GetHeadUpdates]", "An error occurred while trying to unmarshal head update", err)
+				c.logger.Errorf("[API][Error][GetHeadUpdates] An error occurred while trying to unmarshal head update. Error: %s", err)
 			}
 
 			*resChan <- upd.Params.HeadChanges
@@ -222,14 +235,14 @@ func (c *APIClient) GetBlock(cid cid.Cid) *types.BlockHeader {
 	resp := &Block{}
 	err := client.Do(ChainGetBlock, []interface{}{cid}, resp)
 	if err != nil {
-		log.Println("[API][Error][GetBlock]", err)
+		c.logger.Errorf("[API][Error][GetBlock] %s", err)
 		return nil
 	}
 
 	c.wsClientPool.Put(client)
 
 	if resp.Error != nil {
-		log.Println("[API][Error][GetBlock]", resp.Error.Message)
+		c.logger.Errorf("[API][Error][GetBlock] %s", resp.Error.Message)
 		return nil
 	}
 	return resp.Result
@@ -239,12 +252,12 @@ func (c *APIClient) GetBlockHttp(cid cid.Cid) *types.BlockHeader {
 	resp := &Block{}
 	err := c.do(ChainGetBlock, []interface{}{cid}, resp)
 	if err != nil {
-		log.Println("[API][Error][GetBlock]", err)
+		c.logger.Errorf("[API][Error][GetBlock] %s", err)
 		return nil
 	}
 
 	if resp.Error != nil {
-		log.Println("[API][Error][GetBlock]", resp.Error.Message)
+		c.logger.Errorf("[API][Error][GetBlock] %s", resp.Error.Message)
 		return nil
 	}
 	return resp.Result
@@ -255,18 +268,18 @@ func (c *APIClient) GetByHeight(height abi.ChainEpoch) (*types.TipSet, bool) {
 	resp := &TipSet{}
 	err := client.Do(ChainGetTipSetByHeight, []interface{}{height, types.EmptyTSK}, resp)
 	if err != nil {
-		log.Println("[API][Error][GetByHeight]", err)
+		c.logger.Errorf("[API][Error][GetByHeight] %s", err)
 		return nil, false
 	}
 
 	c.wsClientPool.Put(client)
 
 	if resp.Error != nil {
-		log.Println("[API][Error][GetByHeight]", resp.Error.Message)
 		// Height reaching check
 		if strings.Contains(resp.Error.Message, "looking for tipset with height greater than start") {
 			return nil, false
 		}
+		c.logger.Errorf("[API][Error][GetByHeight] %s", resp.Error.Message)
 		return nil, true
 	}
 	return resp.Result, false
@@ -276,16 +289,16 @@ func (c *APIClient) GetByHeightHttp(height abi.ChainEpoch) (*types.TipSet, bool)
 	resp := &TipSet{}
 	err := c.do(ChainGetTipSetByHeight, []interface{}{height, types.EmptyTSK}, resp)
 	if err != nil {
-		log.Println("[API][Error][GetByHeight]", err)
+		c.logger.Errorf("[API][Error][GetByHeight] %s", err)
 		return nil, true
 	}
 
 	if resp.Error != nil {
-		log.Println("[API][Error][GetByHeight]", resp.Error.Message)
 		// Height reaching check
 		if strings.Contains(resp.Error.Message, "looking for tipset with height greater than start") {
 			return nil, false
 		}
+		c.logger.Errorf("[API][Error][GetByHeight] %s", resp.Error.Message)
 		return nil, true
 	}
 	return resp.Result, true
@@ -296,14 +309,14 @@ func (c *APIClient) GetByKey(key types.TipSetKey) *types.TipSet {
 	resp := &TipSet{}
 	err := client.Do(ChainGetTipSet, []interface{}{key}, resp)
 	if err != nil {
-		log.Println("[API][Error][GetByKey]", err)
+		c.logger.Errorf("[API][Error][GetByKey] %s", err)
 		return nil
 	}
 
 	c.wsClientPool.Put(client)
 
 	if resp.Error != nil {
-		log.Println("[API][Error][GetByKey]", resp.Error.Message)
+		c.logger.Errorf("[API][Error][GetByKey] %s", resp.Error.Message)
 		return nil
 	}
 	return resp.Result
@@ -313,12 +326,12 @@ func (c *APIClient) GetByKeyHttp(key types.TipSetKey) *types.TipSet {
 	resp := &TipSet{}
 	err := c.do(ChainGetTipSet, []interface{}{key}, resp)
 	if err != nil {
-		log.Println("[API][Error][GetByKey]", err)
+		c.logger.Errorf("[API][Error][GetByKey] %s", err)
 		return nil
 	}
 
 	if resp.Error != nil {
-		log.Println("[API][Error][GetByKey]", resp.Error.Message)
+		c.logger.Errorf("[API][Error][GetByKey] %s", resp.Error.Message)
 		return nil
 	}
 	return resp.Result
@@ -335,7 +348,7 @@ func (c *APIClient) GetBlockMessages(cid cid.Cid) *api.BlockMessages {
 	c.wsClientPool.Put(client)
 
 	if resp.Error != nil {
-		log.Println("[API][Error][GetBlockMessages]", resp.Error.Message)
+		c.logger.Errorf("[API][Error][GetBlockMessages] %s", resp.Error.Message)
 		return nil
 	}
 	return resp.Result
@@ -349,7 +362,7 @@ func (c *APIClient) GetBlockMessagesHttp(cid cid.Cid) *api.BlockMessages {
 	}
 
 	if resp.Error != nil {
-		log.Println("[API][Error][GetBlockMessages]", resp.Error.Message)
+		c.logger.Errorf("[API][Error][GetBlockMessages] %s", resp.Error.Message)
 		return nil
 	}
 	return resp.Result
@@ -366,7 +379,7 @@ func (c *APIClient) GetMessage(cid cid.Cid) *types.Message {
 	c.wsClientPool.Put(client)
 
 	if resp.Error != nil {
-		log.Println("[API][Error][GetMessage]", resp.Error.Message)
+		c.logger.Errorf("[API][Error][GetMessage] %s", resp.Error.Message)
 		return nil
 	}
 	return resp.Result
@@ -380,7 +393,7 @@ func (c *APIClient) GetMessageHttp(cid cid.Cid) *types.Message {
 	}
 
 	if resp.Error != nil {
-		log.Println("[API][Error][GetMessage]", resp.Error.Message)
+		c.logger.Errorf("[API][Error][GetMessage] %s", resp.Error.Message)
 		return nil
 	}
 	return resp.Result
@@ -397,7 +410,7 @@ func (c *APIClient) GetParentMessages(blockCid cid.Cid) []*MessageAndCid {
 	c.wsClientPool.Put(client)
 
 	if resp.Error != nil {
-		log.Println("[API][Error][GetMessage]", resp.Error.Message)
+		c.logger.Errorf("[API][Error][GetMessage] %s", resp.Error.Message)
 		return nil
 	}
 	return resp.Result
@@ -411,7 +424,7 @@ func (c *APIClient) GetParentMessagesHttp(blockCid cid.Cid) []*MessageAndCid {
 	}
 
 	if resp.Error != nil {
-		log.Println("[API][Error][GetMessage]", resp.Error.Message)
+		c.logger.Errorf("[API][Error][GetMessage] %s", resp.Error.Message)
 		return nil
 	}
 	return resp.Result
@@ -428,7 +441,7 @@ func (c *APIClient) GetParentReceipts(blockCid cid.Cid) []*types.MessageReceipt 
 	c.wsClientPool.Put(client)
 
 	if resp.Error != nil {
-		log.Println("[API][Error][GetMessage]", resp.Error.Message)
+		c.logger.Errorf("[API][Error][GetMessage] %s", resp.Error.Message)
 		return nil
 	}
 	return resp.Result
@@ -442,7 +455,7 @@ func (c *APIClient) GetParentReceiptsHttp(blockCid cid.Cid) []*types.MessageRece
 	}
 
 	if resp.Error != nil {
-		log.Println("[API][Error][GetMessage]", resp.Error.Message)
+		c.logger.Errorf("[API][Error][GetMessage] %s", resp.Error.Message)
 		return nil
 	}
 	return resp.Result
@@ -459,7 +472,7 @@ func (c *APIClient) ChainHasObj(cid cid.Cid) (bool, error) {
 	c.wsClientPool.Put(client)
 
 	if resp.Error != nil {
-		log.Println("[API][Error][ChainHasObj]", resp.Error.Message)
+		c.logger.Errorf("[API][Error][ChainHasObj] %s", resp.Error.Message)
 		return false, errors.New(resp.Error.Message)
 	}
 	return resp.Result, nil
@@ -473,7 +486,7 @@ func (c *APIClient) ChainHasObjHttp(cid cid.Cid) (bool, error) {
 	}
 
 	if resp.Error != nil {
-		log.Println("[API][Error][ChainHasObj]", resp.Error.Message)
+		c.logger.Errorf("[API][Error][ChainHasObj] %s", resp.Error.Message)
 		return false, errors.New(resp.Error.Message)
 	}
 	return resp.Result, nil
@@ -495,7 +508,7 @@ func (c *APIClient) GetActor(addr address.Address, tsk *types.TipSetKey) *types.
 	c.wsClientPool.Put(client)
 
 	if resp.Error != nil {
-		log.Println("[API][Error][GetActor]", resp.Error.Message)
+		c.logger.Errorf("[API][Error][GetActor] %s", resp.Error.Message)
 		return nil
 	}
 	return resp.Result
@@ -514,7 +527,7 @@ func (c *APIClient) GetActorHttp(addr address.Address, tsk *types.TipSetKey) *ty
 	}
 
 	if resp.Error != nil {
-		log.Println("[API][Error][GetActor]", resp.Error.Message)
+		c.logger.Errorf("[API][Error][GetActor] %s", resp.Error.Message)
 		return nil
 	}
 	return resp.Result
@@ -531,7 +544,7 @@ func (c *APIClient) GetChangedActors(start, end cid.Cid) map[string]types.Actor 
 	c.wsClientPool.Put(client)
 
 	if resp.Error != nil {
-		log.Println("[API][Error][GetChangedActors]", resp.Error.Message)
+		c.logger.Errorf("[API][Error][GetChangedActors] %s", resp.Error.Message)
 		return nil
 	}
 	return resp.Result
@@ -545,7 +558,7 @@ func (c *APIClient) GetChangedActorsHttp(start, end cid.Cid) map[string]types.Ac
 	}
 
 	if resp.Error != nil {
-		log.Println("[API][Error][GetChangedActors]", resp.Error.Message)
+		c.logger.Errorf("[API][Error][GetChangedActors] %s", resp.Error.Message)
 		return nil
 	}
 	return resp.Result
@@ -562,7 +575,7 @@ func (c *APIClient) ReadState(actor address.Address, tsk types.TipSetKey) *Actor
 	c.wsClientPool.Put(client)
 
 	if resp.Error != nil {
-		log.Println("[API][Error][ReadState]", resp.Error.Message)
+		c.logger.Errorf("[API][Error][ReadState] %s", resp.Error.Message)
 		return nil
 	}
 	return resp.Result
@@ -576,7 +589,7 @@ func (c *APIClient) ReadStateHttp(actor address.Address, tsk types.TipSetKey) *A
 	}
 
 	if resp.Error != nil {
-		log.Println("[API][Error][ReadState]", resp.Error.Message)
+		c.logger.Errorf("[API][Error][ReadState] %s", resp.Error.Message)
 		return nil
 	}
 	return resp.Result
@@ -593,7 +606,7 @@ func (c *APIClient) ListMiners(tsk types.TipSetKey) []address.Address {
 	c.wsClientPool.Put(client)
 
 	if resp.Error != nil {
-		log.Println("[API][Error][ListMiners]", resp.Error.Message)
+		c.logger.Errorf("[API][Error][ListMiners] %s", resp.Error.Message)
 		return nil
 	}
 	return resp.Result
@@ -607,7 +620,7 @@ func (c *APIClient) ListMinersHttp(tsk types.TipSetKey) []address.Address {
 	}
 
 	if resp.Error != nil {
-		log.Println("[API][Error][ListMiners]", resp.Error.Message)
+		c.logger.Errorf("[API][Error][ListMiners] %s", resp.Error.Message)
 		return nil
 	}
 	return resp.Result
@@ -624,7 +637,7 @@ func (c *APIClient) GetMinerInfo(actor address.Address, tsk types.TipSetKey) *mi
 	c.wsClientPool.Put(client)
 
 	if resp.Error != nil {
-		log.Println("[API][Error][ListMiners]", resp.Error.Message)
+		c.logger.Errorf("[API][Error][ListMiners] %s", resp.Error.Message)
 		return nil
 	}
 	return resp.Result
@@ -638,7 +651,7 @@ func (c *APIClient) GetMinerInfoHttp(actor address.Address, tsk types.TipSetKey)
 	}
 
 	if resp.Error != nil {
-		log.Println("[API][Error][ListMiners]", resp.Error.Message)
+		c.logger.Errorf("[API][Error][ListMiners] %s", resp.Error.Message)
 		return nil
 	}
 	return resp.Result
@@ -655,7 +668,7 @@ func (c *APIClient) GetMinerPower(actor address.Address, tsk types.TipSetKey) *a
 	c.wsClientPool.Put(client)
 
 	if resp.Error != nil {
-		log.Println("[API][Error][ListMiners]", resp.Error.Message)
+		c.logger.Errorf("[API][Error][ListMiners] %s", resp.Error.Message)
 		return nil
 	}
 	return resp.Result
@@ -669,7 +682,7 @@ func (c *APIClient) GetMinerPowerHttp(actor address.Address, tsk types.TipSetKey
 	}
 
 	if resp.Error != nil {
-		log.Println("[API][Error][ListMiners]", resp.Error.Message)
+		c.logger.Errorf("[API][Error][ListMiners] %s", resp.Error.Message)
 		return nil
 	}
 	return resp.Result
@@ -686,7 +699,7 @@ func (c *APIClient) GetMinerSectors(actor address.Address, tsk types.TipSetKey) 
 	c.wsClientPool.Put(client)
 
 	if resp.Error != nil {
-		log.Println("[API][Error][ListMiners]", resp.Error.Message)
+		c.logger.Errorf("[API][Error][ListMiners] %s", resp.Error.Message)
 		return nil
 	}
 	return resp.Result
@@ -700,7 +713,7 @@ func (c *APIClient) GetMinerSectorsHttp(actor address.Address, tsk types.TipSetK
 	}
 
 	if resp.Error != nil {
-		log.Println("[API][Error][ListMiners]", resp.Error.Message)
+		c.logger.Errorf("[API][Error][ListMiners] %s", resp.Error.Message)
 		return nil
 	}
 	return resp.Result
@@ -722,7 +735,7 @@ func (c *APIClient) LookupID(actor address.Address, tsk *types.TipSetKey) *addre
 	c.wsClientPool.Put(client)
 
 	if resp.Error != nil {
-		log.Println("[API][Error][LookupID]", resp.Error.Message)
+		c.logger.Errorf("[API][Error][LookupID] %s", resp.Error.Message)
 		return nil
 	}
 	return &resp.Result
@@ -741,7 +754,7 @@ func (c *APIClient) LookupIDHttp(actor address.Address, tsk *types.TipSetKey) *a
 	}
 
 	if resp.Error != nil {
-		log.Println("[API][Error][LookupID]", resp.Error.Message)
+		c.logger.Errorf("[API][Error][LookupID] %s", resp.Error.Message)
 		return nil
 	}
 	return &resp.Result
@@ -763,7 +776,7 @@ func (c *APIClient) AccountKey(actor address.Address, tsk *types.TipSetKey) *add
 	c.wsClientPool.Put(client)
 
 	if resp.Error != nil {
-		log.Println("[API][Error][AccountKey]", resp.Error.Message)
+		c.logger.Errorf("[API][Error][AccountKey] %s", resp.Error.Message)
 		return nil
 	}
 	return &resp.Result
@@ -782,7 +795,7 @@ func (c *APIClient) AccountKeyHttp(actor address.Address, tsk *types.TipSetKey) 
 	}
 
 	if resp.Error != nil {
-		log.Println("[API][Error][AccountKey]", resp.Error.Message)
+		c.logger.Errorf("[API][Error][AccountKey] %s", resp.Error.Message)
 		return nil
 	}
 	return &resp.Result
@@ -795,13 +808,13 @@ func (c *APIClient) NetworkName() string {
 	err := client.Do(StateNetworkName, []interface{}{}, resp)
 
 	if err != nil {
-		log.Println("[API][Error][NetworkName]", err)
+		c.logger.Errorf("[API][Error][NetworkName] %s", err)
 	}
 
 	c.wsClientPool.Put(client)
 
 	if resp.Error != nil {
-		log.Println("[API][Error][NetworkName]", resp.Error.Message)
+		c.logger.Errorf("[API][Error][NetworkName] %s", resp.Error.Message)
 	}
 
 	return resp.Result
@@ -813,11 +826,11 @@ func (c *APIClient) NetworkNameHttp() string {
 	err := c.do(StateNetworkName, []interface{}{}, resp)
 
 	if err != nil {
-		log.Println("[API][Error][NetworkName]", err)
+		c.logger.Errorf("[API][Error][NetworkName] %s", err)
 	}
 
 	if resp.Error != nil {
-		log.Println("[API][Error][NetworkName]", resp.Error.Message)
+		c.logger.Errorf("[API][Error][NetworkName] %s", resp.Error.Message)
 	}
 	return resp.Result
 }
@@ -834,13 +847,13 @@ func (c *APIClient) NetworkVersion(tsk *types.TipSetKey) int {
 	}
 
 	if err != nil {
-		log.Println("[API][Error][NetworkVersion]", err)
+		c.logger.Errorf("[API][Error][NetworkVersion] %s", err)
 	}
 
 	c.wsClientPool.Put(client)
 
 	if resp.Error != nil {
-		log.Println("[API][Error][NetworkVersion]", resp.Error.Message)
+		c.logger.Errorf("[API][Error][NetworkVersion] %s", resp.Error.Message)
 	}
 
 	return resp.Result
@@ -857,11 +870,11 @@ func (c *APIClient) NetworkVersionHttp(tsk *types.TipSetKey) int {
 	}
 
 	if err != nil {
-		log.Println("[API][Error][NetworkVersion]", err)
+		c.logger.Errorf("[API][Error][NetworkVersion] %s", err)
 	}
 
 	if resp.Error != nil {
-		log.Println("[API][Error][NetworkVersion]", resp.Error.Message)
+		c.logger.Errorf("[API][Error][NetworkVersion] %s", resp.Error.Message)
 	}
 	return resp.Result
 }
@@ -871,11 +884,11 @@ func (c *APIClient) NetPeersHttp() []*peer.AddrInfo {
 
 	err := c.do(NetPeers, []interface{}{}, resp)
 	if err != nil {
-		log.Println("[API][Error][NetPeers]", err)
+		c.logger.Errorf("[API][Error][NetPeers] %s", err)
 	}
 
 	if resp.Error != nil {
-		log.Println("[API][Error][NetPeers]", resp.Error.Message)
+		c.logger.Errorf("[API][Error][NetPeers] %s", resp.Error.Message)
 	}
 	return resp.Result
 }
